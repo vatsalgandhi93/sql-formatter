@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>SQL Dialect Formatter v1.10.0 — EigenZ Solutions LLC</title>
+<title>SQL Dialect Formatter v1.11.0 — EigenZ Solutions LLC</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
 <style>
@@ -71,7 +71,7 @@ select:hover,select:focus{border-color:var(--accent)}
 .btn-g:hover{color:var(--text);background:var(--bg-panel)}
 
 /* Editor grid */
-.grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;height:480px;flex-shrink:0}
+.grid{display:grid;grid-template-columns:1fr 1fr;gap:14px;height:600px;flex-shrink:0}
 .panel{display:flex;flex-direction:column;border:1px solid var(--border);border-radius:var(--radius);overflow:hidden;background:var(--bg-panel);transition:background .25s,border-color .25s}
 .phead{display:flex;align-items:center;justify-content:space-between;padding:7px 12px;background:var(--bg-header);border-bottom:1px solid var(--border);flex-shrink:0}
 .plabel{font-size:11px;font-weight:600;color:var(--text-m);text-transform:uppercase;letter-spacing:.08em}
@@ -111,10 +111,10 @@ footer{padding:14px 24px;border-top:1px solid var(--border);display:flex;align-i
 .flinks a{font-size:11px;color:var(--text-m);text-decoration:none;font-weight:500;transition:color .15s}
 .flinks a:hover{color:var(--accent)}
 
-@media(max-width:680px){
+@media(max-width:520px){
   header,main,footer{padding-left:14px;padding-right:14px}
   .grid{grid-template-columns:1fr;height:auto}
-  .panel{height:280px}
+  .panel{height:360px}
 }
 </style>
 </head>
@@ -210,7 +210,7 @@ footer{padding:14px 24px;border-top:1px solid var(--border);display:flex;align-i
 </main>
 
 <footer>
-  <div class="fcopy">&copy; 2026 EigenZ Solutions LLC. &nbsp;<span style="color:var(--accent);font-family:var(--font-code);font-size:10px">v1.10.0</span> SQL Dialect Formatter by EigenZ Solutions LLC. All rights reserved.</div>
+  <div class="fcopy">&copy; 2026 EigenZ Solutions LLC. &nbsp;<span style="color:var(--accent);font-family:var(--font-code);font-size:10px">v1.11.0</span> SQL Dialect Formatter by EigenZ Solutions LLC. All rights reserved.</div>
   <div class="flinks">
     <a href="#">Documentation</a>
     <a href="#">VS Code Extension</a>
@@ -225,14 +225,15 @@ footer{padding:14px 24px;border-top:1px solid var(--border);display:flex;align-i
 
 function upcase(s) {
   const KWS = [
-    'SELECT','FROM','LEFT JOIN','RIGHT JOIN','INNER JOIN','OUTER JOIN','JOIN',
-    'ON','USING','GROUP BY','ORDER BY','HAVING','QUALIFY','LIMIT','WHERE','AND','OR',
-    'NOT IN','IN','AS','DISTINCT','WITH','UNION ALL','UNION',
+    'SELECT','FROM','LEFT JOIN','RIGHT JOIN','INNER JOIN','OUTER JOIN',
+    'CROSS JOIN','LEFT OUTER JOIN','RIGHT OUTER JOIN','FULL JOIN','FULL OUTER JOIN','JOIN',
+    'ON','USING','GROUP BY','ORDER BY','HAVING','QUALIFY','LIMIT','OFFSET','WHERE','AND','OR',
+    'NOT IN','IN','AS','DISTINCT','WITH','WITH OFFSET','UNION ALL','UNION','INTERSECT','EXCEPT',
     'EXISTS','BETWEEN','IS NOT NULL','IS NULL','TRUE','FALSE',
     'ASC','DESC','CASE','WHEN','THEN','ELSE','END',
     'OVER','PARTITION BY','ROWS BETWEEN','RANGE BETWEEN','UNBOUNDED PRECEDING',
     'UNBOUNDED FOLLOWING','CURRENT ROW','PRECEDING','FOLLOWING','NULLS FIRST','NULLS LAST',
-    'AVG','SUM','COUNT','MIN','MAX',
+    'AVG','SUM','COUNT','MIN','MAX','UNNEST',
     'ROW_NUMBER','RANK','DENSE_RANK','PERCENT_RANK','CUME_DIST','NTILE',
     'LAG','LEAD','FIRST_VALUE','LAST_VALUE','NTH_VALUE'
   ];
@@ -282,7 +283,7 @@ function splitIntoClauses(s) {
     else if (s[i]===')') { depth--; cur+=s[i++]; continue; }
     if (depth===0) {
       const m = s.slice(i).match(
-        /^(SELECT|FROM|LEFT\s+JOIN|RIGHT\s+JOIN|INNER\s+JOIN|OUTER\s+JOIN|JOIN|WHERE|GROUP\s+BY|ORDER\s+BY|HAVING|QUALIFY|LIMIT)\b/i
+        /^(SELECT|FROM|LEFT\s+OUTER\s+JOIN|RIGHT\s+OUTER\s+JOIN|FULL\s+OUTER\s+JOIN|LEFT\s+JOIN|RIGHT\s+JOIN|INNER\s+JOIN|OUTER\s+JOIN|CROSS\s+JOIN|FULL\s+JOIN|JOIN|WHERE|GROUP\s+BY|ORDER\s+BY|HAVING|QUALIFY|LIMIT)\b/i
       );
       if (m) {
         if (cur.trim()) segs.push(cur.trim());
@@ -643,8 +644,8 @@ function formatSQL(raw, indentSize, commaPos) {
         fromCmts.forEach(c => outLines.push(c));
         prevWasQueryEnd = true;
 
-      } else if (/^(LEFT JOIN|RIGHT JOIN|INNER JOIN|OUTER JOIN|JOIN)/.test(tok)) {
-        const m      = tok.match(/^(LEFT JOIN|RIGHT JOIN|INNER JOIN|OUTER JOIN|JOIN)\s*/);
+      } else if (/^(LEFT OUTER JOIN|RIGHT OUTER JOIN|FULL OUTER JOIN|LEFT JOIN|RIGHT JOIN|INNER JOIN|OUTER JOIN|CROSS JOIN|FULL JOIN|JOIN)/.test(tok)) {
+        const m      = tok.match(/^(LEFT OUTER JOIN|RIGHT OUTER JOIN|FULL OUTER JOIN|LEFT JOIN|RIGHT JOIN|INNER JOIN|OUTER JOIN|CROSS JOIN|FULL JOIN|JOIN)\s*/);
         const joinKw = m[1];
         const rest   = tok.slice(m[0].length);
 
@@ -767,7 +768,7 @@ function detectDialect(sql) {
 // Processes SQL token by token so keywords are NEVER highlighted inside
 // comments or string literals.
 function hl(sql) {
-  const KW_RE = /\b(SELECT DISTINCT|SELECT|FROM|WHERE|LEFT JOIN|RIGHT JOIN|INNER JOIN|OUTER JOIN|JOIN|ON|USING|GROUP BY|ORDER BY|HAVING|QUALIFY|LIMIT|AND|OR|NOT|IN|AS|DISTINCT|WITH|UNION ALL|UNION|ALL|EXISTS|BETWEEN|IS NOT NULL|IS NULL|IS|NULL|TRUE|FALSE|ASC|DESC|CASE|WHEN|THEN|ELSE|END|OVER|PARTITION BY|ROWS BETWEEN|RANGE BETWEEN|UNBOUNDED PRECEDING|UNBOUNDED FOLLOWING|CURRENT ROW|PRECEDING|FOLLOWING|NULLS FIRST|NULLS LAST|MERGE|MATCHED|INSERT|UPDATE|DELETE|VALUES|SET|EXTERNAL|STORED|OPTIMIZE|VACUUM|ZORDER|DESCRIBE|HISTORY)\b/g;
+  const KW_RE = /\b(SELECT DISTINCT|SELECT|FROM|WHERE|LEFT OUTER JOIN|RIGHT OUTER JOIN|FULL OUTER JOIN|LEFT JOIN|RIGHT JOIN|INNER JOIN|OUTER JOIN|CROSS JOIN|FULL JOIN|JOIN|ON|USING|GROUP BY|ORDER BY|HAVING|QUALIFY|LIMIT|OFFSET|AND|OR|NOT|IN|AS|DISTINCT|WITH OFFSET|WITH|UNION ALL|UNION|INTERSECT|EXCEPT|ALL|EXISTS|BETWEEN|IS NOT NULL|IS NULL|IS|NULL|TRUE|FALSE|ASC|DESC|CASE|WHEN|THEN|ELSE|END|OVER|PARTITION BY|ROWS BETWEEN|RANGE BETWEEN|UNBOUNDED PRECEDING|UNBOUNDED FOLLOWING|CURRENT ROW|PRECEDING|FOLLOWING|NULLS FIRST|NULLS LAST|MERGE|MATCHED|INSERT|UPDATE|DELETE|VALUES|SET|EXTERNAL|STORED|OPTIMIZE|VACUUM|ZORDER|DESCRIBE|HISTORY)\b/g;
   const FN_RE = /\b(AVG|SUM|COUNT|MIN|MAX|COALESCE|NULLIF|CAST|TRIM|LOWER|UPPER|CONCAT|NOW|ROUND|ABS|LENGTH|DATE_TRUNC|REPLACE|IFF|ZEROIFNULL|UNNEST|FLATTEN|EXPLODE|COLLECT_LIST|ROW_NUMBER|RANK|DENSE_RANK|PERCENT_RANK|CUME_DIST|NTILE|LAG|LEAD|FIRST_VALUE|LAST_VALUE|NTH_VALUE)\b/g;
   const NUM_RE = /\b(\d+(?:\.\d+)?)\b/g;
 
