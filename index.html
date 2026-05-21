@@ -7,447 +7,148 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
 <style>
-*,*::before,*::after { box-sizing: border-box; margin: 0; padding: 0; }
-
-/* ── Brand tokens ─────────────────────────────────────────────────── */
-:root {
-  /* chart palette */
-  --c-sand:    #E5DDCD;
-  --c-gold:    #B4A139;
-  --c-orange:  #F06B2C;
-  --c-violet:  #757AF1;
-  --c-espresso:#201511;
-
-  /* website palette */
-  --c-cream:   #FBF7EF;
-  --c-linen:   #F7EEE0;
-  --c-sage:    #777869;
-  --c-bark:    #2F241B;
-  --c-soil:    #231B18;
-
-  --font-ui:   'Poppins', sans-serif;
-  --font-code: 'JetBrains Mono', monospace;
-  --radius:    10px;
-  --radius-sm: 6px;
-  --shadow:    0 1px 3px rgba(35,27,24,.08), 0 4px 16px rgba(35,27,24,.06);
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --c-gold:#B4A139;--c-orange:#F06B2C;--c-violet:#757AF1;
+  --font-ui:'Poppins',sans-serif;--font-code:'JetBrains Mono',monospace;
+  --radius:10px;--radius-sm:6px;
+}
+[data-theme="light"]{
+  --bg:#FBF7EF;--bg-panel:#F7EEE0;--bg-header:#F0E8D6;--bg-code:#FDFAF5;
+  --border:rgba(47,36,27,.14);--border-md:rgba(47,36,27,.22);
+  --text:#2F241B;--text-2:#5a5244;--text-m:#777869;
+  --accent:#B4A139;--accent-h:#9e8d30;--accent-t:#FDFAF5;
+  --tag-ok-bg:#eef6e6;--tag-ok-fg:#4a7c2a;
+  --tag-err-bg:#fdf0e8;--tag-err-fg:#c0451a;
+  --tag-wait-bg:#f0ede6;--tag-wait-fg:#777869;
+  --kw:#5256c8;--fn:#8a7b20;--str:#c05520;--num:#9e3a6e;--cmt:#8f8a7e;
+  --ln-bg:#EDE5D5;--ln-fg:#9a8f80;--ln-border:rgba(47,36,27,.12);
+  --scroll:rgba(47,36,27,.15);
+}
+[data-theme="dark"]{
+  --bg:#201511;--bg-panel:#2a1c16;--bg-header:#251a13;--bg-code:#1a0f0a;
+  --border:rgba(229,221,205,.10);--border-md:rgba(229,221,205,.18);
+  --text:#EDE5D8;--text-2:#c4b89e;--text-m:#8a7e6e;
+  --accent:#B4A139;--accent-h:#cdb840;--accent-t:#1a1208;
+  --tag-ok-bg:rgba(100,140,60,.18);--tag-ok-fg:#a3d46e;
+  --tag-err-bg:rgba(240,107,44,.14);--tag-err-fg:#f09060;
+  --tag-wait-bg:rgba(229,221,205,.08);--tag-wait-fg:#8a7e6e;
+  --kw:#9198f5;--fn:#c9b93a;--str:#f08050;--num:#d87ab0;--cmt:#6e6658;
+  --ln-bg:#1e1108;--ln-fg:#5a4e3e;--ln-border:rgba(229,221,205,.08);
+  --scroll:rgba(229,221,205,.12);
 }
 
-/* ── Light theme (default) ────────────────────────────────────────── */
-[data-theme="light"] {
-  --bg:          #FBF7EF;
-  --bg-panel:    #F7EEE0;
-  --bg-header:   #F0E8D6;
-  --bg-input:    #FDFAF5;
-  --border:      rgba(47,36,27,.14);
-  --border-md:   rgba(47,36,27,.22);
-  --text-primary:   #2F241B;
-  --text-secondary: #5a5244;
-  --text-muted:     #777869;
-  --accent:      #B4A139;
-  --accent-hover:#9e8d30;
-  --accent-text: #FDFAF5;
-  --tag-ok-bg:   #eef6e6;
-  --tag-ok-fg:   #4a7c2a;
-  --tag-err-bg:  #fdf0e8;
-  --tag-err-fg:  #c0451a;
-  --tag-wait-bg: #f0ede6;
-  --tag-wait-fg: #777869;
-  --kw:   #5256c8;
-  --fn:   #8a7b20;
-  --str:  #c05520;
-  --num:  #9e3a6e;
-  --cmt:  #8f8a7e;
-  --scrollbar: rgba(47,36,27,.15);
-}
+body{font-family:var(--font-ui);background:var(--bg);color:var(--text);min-height:100vh;display:flex;flex-direction:column;transition:background .25s,color .25s}
 
-/* ── Dark theme ───────────────────────────────────────────────────── */
-[data-theme="dark"] {
-  --bg:          #201511;
-  --bg-panel:    #2a1c16;
-  --bg-header:   #251a13;
-  --bg-input:    #1a0f0a;
-  --border:      rgba(229,221,205,.10);
-  --border-md:   rgba(229,221,205,.18);
-  --text-primary:   #EDE5D8;
-  --text-secondary: #c4b89e;
-  --text-muted:     #8a7e6e;
-  --accent:      #B4A139;
-  --accent-hover:#cdb840;
-  --accent-text: #1a1208;
-  --tag-ok-bg:   rgba(100,140,60,.18);
-  --tag-ok-fg:   #a3d46e;
-  --tag-err-bg:  rgba(240,107,44,.14);
-  --tag-err-fg:  #f09060;
-  --tag-wait-bg: rgba(229,221,205,.08);
-  --tag-wait-fg: #8a7e6e;
-  --kw:   #9198f5;
-  --fn:   #c9b93a;
-  --str:  #f08050;
-  --num:  #d87ab0;
-  --cmt:  #6e6658;
-  --scrollbar: rgba(229,221,205,.12);
-}
+/* Header */
+header{background:var(--bg-header);border-bottom:1px solid var(--border);padding:0 24px;display:flex;align-items:center;justify-content:space-between;height:54px;flex-shrink:0}
+.brand{display:flex;align-items:baseline;gap:8px}
+.brand-name{font-size:16px;font-weight:700;color:var(--text);letter-spacing:-.02em}
+.brand-name b{color:var(--accent)}
+.brand-by{font-size:11px;font-weight:500;color:var(--text-m);letter-spacing:.04em;text-transform:uppercase}
+.hdr-right{display:flex;align-items:center;gap:8px}
+.dialect-pill{font-size:11px;font-weight:500;padding:2px 10px;border-radius:99px;background:rgba(117,122,241,.12);color:#757AF1;border:1px solid rgba(117,122,241,.25);font-family:var(--font-code);display:none}
+.theme-wrap{display:flex;align-items:center;gap:6px}
+.theme-ico{font-size:12px;line-height:1}
+.theme-btn{width:40px;height:22px;background:var(--border-md);border-radius:99px;border:none;cursor:pointer;position:relative;transition:background .2s;flex-shrink:0}
+.theme-btn::after{content:'';position:absolute;top:2px;left:2px;width:18px;height:18px;border-radius:50%;background:var(--accent);transition:transform .2s;box-shadow:0 1px 4px rgba(0,0,0,.2)}
+[data-theme="dark"] .theme-btn::after{transform:translateX(18px)}
 
-/* ── Base ─────────────────────────────────────────────────────────── */
-body {
-  font-family: var(--font-ui);
-  background: var(--bg);
-  color: var(--text-primary);
-  min-height: 100vh;
-  display: flex;
-  flex-direction: column;
-  transition: background .25s, color .25s;
-}
+/* Main */
+main{flex:1;padding:16px 24px 12px;display:flex;flex-direction:column;gap:12px;min-height:0}
 
-/* ── Header ───────────────────────────────────────────────────────── */
-header {
-  background: var(--bg-header);
-  border-bottom: 1px solid var(--border);
-  padding: 0 28px;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  height: 58px;
-  flex-shrink: 0;
-}
-.brand {
-  display: flex;
-  align-items: baseline;
-  gap: 10px;
-}
-.brand-name {
-  font-size: 17px;
-  font-weight: 700;
-  color: var(--text-primary);
-  letter-spacing: -.02em;
-}
-.brand-name span { color: var(--accent); }
-.brand-by {
-  font-size: 11px;
-  font-weight: 500;
-  color: var(--text-muted);
-  letter-spacing: .03em;
-  text-transform: uppercase;
-}
-.header-right { display: flex; align-items: center; gap: 10px; }
-.dialect-pill {
-  font-size: 11px;
-  font-weight: 500;
-  padding: 3px 10px;
-  border-radius: 99px;
-  background: rgba(117,122,241,.12);
-  color: var(--c-violet);
-  border: 1px solid rgba(117,122,241,.25);
-  font-family: var(--font-code);
-  display: none;
-}
+/* Toolbar */
+.toolbar{display:flex;flex-wrap:wrap;align-items:center;gap:8px;flex-shrink:0}
+.toolbar label{font-size:11px;font-weight:600;color:var(--text-m);text-transform:uppercase;letter-spacing:.07em}
+select{font-family:var(--font-ui);font-size:13px;font-weight:500;background:var(--bg-panel);color:var(--text);border:1px solid var(--border-md);border-radius:var(--radius-sm);padding:5px 24px 5px 9px;cursor:pointer;outline:none;transition:border-color .15s;-webkit-appearance:none;appearance:none;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M0 0l5 6 5-6z' fill='%23777869'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 8px center}
+select:hover,select:focus{border-color:var(--accent)}
+.sep{width:1px;height:20px;background:var(--border)}
+.btn{font-family:var(--font-ui);font-size:13px;font-weight:600;border-radius:var(--radius-sm);padding:6px 14px;cursor:pointer;border:1px solid transparent;transition:all .15s;outline:none}
+.btn-p{background:var(--accent);color:var(--accent-t);border-color:var(--accent)}
+.btn-p:hover{background:var(--accent-h);transform:translateY(-1px);box-shadow:0 2px 8px rgba(180,161,57,.3)}
+.btn-p:active{transform:none;box-shadow:none}
+.btn-g{background:transparent;color:var(--text-m);border-color:var(--border-md)}
+.btn-g:hover{color:var(--text);background:var(--bg-panel)}
 
-/* ── Theme toggle ─────────────────────────────────────────────────── */
-.theme-toggle {
-  width: 44px;
-  height: 24px;
-  background: var(--border-md);
-  border-radius: 99px;
-  border: none;
-  cursor: pointer;
-  position: relative;
-  transition: background .2s;
-  flex-shrink: 0;
-}
-.theme-toggle::after {
-  content: '';
-  position: absolute;
-  top: 3px; left: 3px;
-  width: 18px; height: 18px;
-  border-radius: 50%;
-  background: var(--accent);
-  transition: transform .2s, background .2s;
-  box-shadow: 0 1px 4px rgba(0,0,0,.2);
-}
-[data-theme="dark"] .theme-toggle::after { transform: translateX(20px); }
-.theme-icon { font-size: 13px; }
+/* Editor grid */
+.grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;flex:1;min-height:0}
+.panel{display:flex;flex-direction:column;border:1px solid var(--border);border-radius:var(--radius);overflow:hidden;background:var(--bg-panel);transition:background .25s,border-color .25s}
+.phead{display:flex;align-items:center;justify-content:space-between;padding:7px 12px;background:var(--bg-header);border-bottom:1px solid var(--border);flex-shrink:0}
+.plabel{font-size:11px;font-weight:600;color:var(--text-m);text-transform:uppercase;letter-spacing:.08em}
+.badge{font-size:10px;font-weight:600;font-family:var(--font-code);padding:2px 8px;border-radius:99px;border:1px solid;letter-spacing:.03em}
+.b-raw{background:var(--tag-err-bg);color:var(--tag-err-fg);border-color:currentColor;opacity:.7}
+.b-ok{background:var(--tag-ok-bg);color:var(--tag-ok-fg);border-color:currentColor}
+.b-wait{background:var(--tag-wait-bg);color:var(--tag-wait-fg);border-color:currentColor}
 
-/* ── Main ─────────────────────────────────────────────────────────── */
-main { flex: 1; padding: 20px 28px 12px; display: flex; flex-direction: column; gap: 14px; min-height: 0; }
-
-/* ── Toolbar ──────────────────────────────────────────────────────── */
-.toolbar {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 8px;
-}
-.toolbar label {
-  font-size: 11px;
-  font-weight: 600;
-  color: var(--text-muted);
-  text-transform: uppercase;
-  letter-spacing: .07em;
-}
-select {
-  font-family: var(--font-ui);
-  font-size: 13px;
-  font-weight: 500;
-  background: var(--bg-panel);
-  color: var(--text-primary);
-  border: 1px solid var(--border-md);
-  border-radius: var(--radius-sm);
-  padding: 6px 10px;
-  cursor: pointer;
-  outline: none;
-  transition: border-color .15s;
-  -webkit-appearance: none;
-  appearance: none;
-  padding-right: 24px;
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M0 0l5 6 5-6z' fill='%23777869'/%3E%3C/svg%3E");
-  background-repeat: no-repeat;
-  background-position: right 8px center;
-}
-select:hover, select:focus { border-color: var(--accent); }
-.sep { width: 1px; height: 22px; background: var(--border); }
-.btn {
-  font-family: var(--font-ui);
-  font-size: 13px;
-  font-weight: 600;
-  border-radius: var(--radius-sm);
-  padding: 7px 16px;
-  cursor: pointer;
-  border: 1px solid transparent;
-  transition: all .15s;
-  outline: none;
-}
-.btn-primary {
-  background: var(--accent);
-  color: var(--accent-text);
-  border-color: var(--accent);
-  letter-spacing: .01em;
-}
-.btn-primary:hover { background: var(--accent-hover); border-color: var(--accent-hover); transform: translateY(-1px); box-shadow: 0 2px 8px rgba(180,161,57,.3); }
-.btn-primary:active { transform: none; box-shadow: none; }
-.btn-ghost {
-  background: transparent;
-  color: var(--text-muted);
-  border-color: var(--border-md);
-}
-.btn-ghost:hover { color: var(--text-primary); border-color: var(--border-md); background: var(--bg-panel); }
-
-/* ── Editor grid ──────────────────────────────────────────────────── */
-.editor-grid {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 14px;
-  flex: 1;
-  min-height: 0;
-}
-.panel {
-  display: flex;
-  flex-direction: column;
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  overflow: hidden;
-  background: var(--bg-panel);
-  box-shadow: var(--shadow);
-  transition: background .25s, border-color .25s;
-}
-.panel-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 8px 14px;
-  background: var(--bg-header);
-  border-bottom: 1px solid var(--border);
-  flex-shrink: 0;
-}
-.panel-label {
-  font-size: 11px;
-  font-weight: 600;
-  color: var(--text-muted);
-  text-transform: uppercase;
-  letter-spacing: .08em;
-}
-.badge {
-  font-size: 10px;
-  font-weight: 600;
-  font-family: var(--font-code);
-  padding: 2px 9px;
-  border-radius: 99px;
-  border: 1px solid;
-  letter-spacing: .03em;
-}
-.b-raw  { background: var(--tag-err-bg); color: var(--tag-err-fg); border-color: currentColor; opacity: .7; }
-.b-ok   { background: var(--tag-ok-bg);  color: var(--tag-ok-fg);  border-color: currentColor; }
-.b-wait { background: var(--tag-wait-bg);color: var(--tag-wait-fg);border-color: currentColor; }
-textarea {
-  flex: 1;
-  width: 100%;
-  background: var(--bg-input);
-  border: none;
-  outline: none;
-  resize: none;
-  font-family: var(--font-code);
-  font-size: 12.5px;
-  line-height: 1.7;
-  color: var(--text-primary);
-  padding: 14px;
-  caret-color: var(--accent);
-  transition: background .25s, color .25s;
-}
-textarea::placeholder { color: var(--text-muted); opacity: .6; }
-#out {
-  flex: 1;
-  overflow: auto;
-  padding: 14px;
-  font-family: var(--font-code);
-  font-size: 12.5px;
-  line-height: 1.7;
-  white-space: pre;
-  color: var(--text-muted);
-  font-style: italic;
-  background: var(--bg-input);
-  transition: background .25s;
-  scrollbar-width: thin;
-  scrollbar-color: var(--scrollbar) transparent;
-}
-#out.ready { color: var(--text-primary); font-style: normal; }
+/* Code area with line numbers */
+.code-wrap{display:flex;flex:1;overflow:hidden;min-height:0;background:var(--bg-code)}
+.ln{font-family:var(--font-code);font-size:12.5px;line-height:1.7;color:var(--ln-fg);text-align:right;padding:14px 8px 14px 10px;background:var(--ln-bg);border-right:1px solid var(--ln-border);user-select:none;overflow:hidden;white-space:pre;flex-shrink:0;min-width:38px;transition:background .25s,color .25s}
+textarea{flex:1;background:transparent;border:none;outline:none;resize:none;font-family:var(--font-code);font-size:12.5px;line-height:1.7;color:var(--text);padding:14px 14px 14px 10px;caret-color:var(--accent);overflow-y:auto;scrollbar-width:thin;scrollbar-color:var(--scroll) transparent;transition:color .25s;white-space:pre;overflow-wrap:normal}
+textarea::placeholder{color:var(--text-m);opacity:.5}
+.out-scroll{flex:1;overflow:auto;scrollbar-width:thin;scrollbar-color:var(--scroll) transparent}
+.out-inner{display:flex;min-height:100%}
+.out-ln{font-family:var(--font-code);font-size:12.5px;line-height:1.7;color:var(--ln-fg);text-align:right;padding:14px 8px 14px 10px;background:var(--ln-bg);border-right:1px solid var(--ln-border);user-select:none;white-space:pre;flex-shrink:0;min-width:38px;transition:background .25s,color .25s}
+.out-code{flex:1;font-family:var(--font-code);font-size:12.5px;line-height:1.7;padding:14px 14px 14px 10px;white-space:pre;color:var(--text-m);font-style:italic;transition:color .25s}
+.out-code.ready{color:var(--text);font-style:normal}
 
 /* Syntax highlight */
-.kw  { color: var(--kw); font-weight: 600; }
-.fn  { color: var(--fn); }
-.str { color: var(--str); }
-.num { color: var(--num); }
-.cmt { color: var(--cmt); font-style: italic; }
+.kw{color:var(--kw);font-weight:600}.fn{color:var(--fn)}.str{color:var(--str)}.num{color:var(--num)}.cmt{color:var(--cmt);font-style:italic}
 
-.copy-btn {
-  font-family: var(--font-ui);
-  font-size: 11px;
-  font-weight: 500;
-  background: transparent;
-  border: 1px solid var(--border-md);
-  color: var(--text-muted);
-  border-radius: var(--radius-sm);
-  padding: 2px 9px;
-  cursor: pointer;
-  transition: all .15s;
-}
-.copy-btn:hover { border-color: var(--accent); color: var(--accent); }
+.copy-btn{font-family:var(--font-ui);font-size:11px;font-weight:500;background:transparent;border:1px solid var(--border-md);color:var(--text-m);border-radius:var(--radius-sm);padding:2px 8px;cursor:pointer;transition:all .15s}
+.copy-btn:hover{border-color:var(--accent);color:var(--accent)}
 
-/* ── Stats ────────────────────────────────────────────────────────── */
-.stats { display: flex; gap: 10px; flex-wrap: wrap; }
-.stat {
-  background: var(--bg-panel);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  padding: 12px 16px;
-  flex: 1;
-  min-width: 110px;
-  box-shadow: var(--shadow);
-  transition: background .25s;
-}
-.stat-n {
-  font-size: 22px;
-  font-weight: 700;
-  color: var(--accent);
-  font-family: var(--font-code);
-  line-height: 1.2;
-}
-.stat-l {
-  font-size: 10px;
-  font-weight: 600;
-  color: var(--text-muted);
-  margin-top: 3px;
-  text-transform: uppercase;
-  letter-spacing: .07em;
-}
+/* Stats */
+.stats{display:flex;gap:10px;flex-wrap:wrap;flex-shrink:0}
+.stat{background:var(--bg-panel);border:1px solid var(--border);border-radius:var(--radius);padding:10px 14px;flex:1;min-width:100px}
+.sn{font-size:20px;font-weight:700;color:var(--accent);font-family:var(--font-code);line-height:1.2}
+.sl{font-size:10px;font-weight:600;color:var(--text-m);margin-top:2px;text-transform:uppercase;letter-spacing:.07em}
+.err-box{padding:10px 14px;border-radius:var(--radius-sm);background:var(--tag-err-bg);border:1px solid var(--tag-err-fg);color:var(--tag-err-fg);font-family:var(--font-code);font-size:12px;display:none;flex-shrink:0}
 
-/* ── Error ────────────────────────────────────────────────────────── */
-.err-box {
-  padding: 10px 14px;
-  border-radius: var(--radius-sm);
-  background: var(--tag-err-bg);
-  border: 1px solid var(--tag-err-fg);
-  color: var(--tag-err-fg);
-  font-family: var(--font-code);
-  font-size: 12px;
-  display: none;
-}
+/* Footer */
+footer{padding:14px 24px;border-top:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;flex-shrink:0}
+.fcopy{font-size:11px;color:var(--text-m)}
+.flinks{display:flex;gap:14px}
+.flinks a{font-size:11px;color:var(--text-m);text-decoration:none;font-weight:500;transition:color .15s}
+.flinks a:hover{color:var(--accent)}
 
-/* ── Footer ───────────────────────────────────────────────────────── */
-footer {
-  margin-top: 28px;
-  padding: 18px 28px;
-  border-top: 1px solid var(--border);
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  flex-wrap: wrap;
-  gap: 8px;
-}
-.footer-copy {
-  font-size: 11px;
-  color: var(--text-muted);
-  font-weight: 400;
-}
-.footer-copy b { color: var(--text-secondary); font-weight: 600; }
-.footer-links {
-  display: flex;
-  gap: 16px;
-}
-.footer-links a {
-  font-size: 11px;
-  color: var(--text-muted);
-  text-decoration: none;
-  font-weight: 500;
-  transition: color .15s;
-}
-.footer-links a:hover { color: var(--accent); }
-
-@media (max-width: 680px) {
-  header { padding: 0 16px; }
-  main { padding: 16px 16px 0; }
-  .editor-grid { grid-template-columns: 1fr; height: auto; }
-  .panel { height: 320px; }
-  footer { padding: 16px; }
+@media(max-width:680px){
+  header,main,footer{padding-left:14px;padding-right:14px}
+  .grid{grid-template-columns:1fr;height:auto}
+  .panel{height:280px}
 }
 </style>
 </head>
 <body>
 
-<!-- Header -->
 <header>
   <div class="brand">
-    <div class="brand-name">SQL Dialect Formatter <span>·</span></div>
-    <div class="brand-by">by EigenZ Solutions</div>
+    <div class="brand-name">SQL Dialect Formatter <b>·</b></div>
+    <div class="brand-by">EigenZ Solutions</div>
   </div>
-  <div class="header-right">
+  <div class="hdr-right">
     <div class="dialect-pill" id="dialect-pill"></div>
-    <span class="theme-icon" id="theme-icon">☀️</span>
-    <button class="theme-toggle" id="theme-btn" onclick="toggleTheme()" aria-label="Toggle dark/light mode"></button>
-    <span class="theme-icon" id="theme-icon-right">🌙</span>
+    <div class="theme-wrap">
+      <span class="theme-ico">☀️</span>
+      <button class="theme-btn" onclick="toggleTheme()" aria-label="Toggle theme"></button>
+      <span class="theme-ico">🌙</span>
+    </div>
   </div>
 </header>
 
-<!-- Main -->
 <main>
-
-  <!-- Toolbar -->
   <div class="toolbar">
     <label>Dialect</label>
     <select id="dialect">
       <option value="auto">Auto-detect</option>
       <optgroup label="Cloud Warehouses">
-        <option value="Azure Synapse">Azure Synapse</option>
-        <option value="Amazon Redshift">Amazon Redshift</option>
-        <option value="AWS Athena">AWS Athena</option>
-        <option value="Databricks">Databricks</option>
-        <option value="BigQuery">BigQuery</option>
-        <option value="Snowflake">Snowflake</option>
+        <option>Azure Synapse</option><option>Amazon Redshift</option>
+        <option>AWS Athena</option><option>Databricks</option>
+        <option>BigQuery</option><option>Snowflake</option>
       </optgroup>
       <optgroup label="Traditional">
-        <option value="PostgreSQL" selected>PostgreSQL</option>
-        <option value="MySQL">MySQL</option>
-        <option value="SQL Server">SQL Server / T-SQL</option>
-        <option value="Spark SQL">Spark SQL</option>
-        <option value="Generic SQL">Generic SQL</option>
+        <option selected>PostgreSQL</option><option>MySQL</option>
+        <option>SQL Server</option><option>Spark SQL</option>
+        <option>Generic SQL</option>
       </optgroup>
     </select>
     <div class="sep"></div>
@@ -464,51 +165,53 @@ footer {
       <option value="6">6 spaces</option>
     </select>
     <div class="sep"></div>
-    <button class="btn btn-primary" onclick="doFormat()">Format SQL</button>
-    <button class="btn btn-ghost" onclick="loadSample()">Load sample</button>
-    <button class="btn btn-ghost" onclick="clearAll()">Clear</button>
+    <button class="btn btn-p" onclick="doFormat()">Format SQL</button>
+    <button class="btn btn-g" onclick="loadSample()">Load sample</button>
+    <button class="btn btn-g" onclick="clearAll()">Clear</button>
   </div>
 
-  <!-- Editor -->
-  <div class="editor-grid">
+  <div class="grid">
     <div class="panel">
-      <div class="panel-head">
-        <span class="panel-label">Input SQL</span>
+      <div class="phead">
+        <span class="plabel">Input SQL</span>
         <span class="badge b-raw">Unformatted</span>
       </div>
-      <textarea id="inp" spellcheck="false" placeholder="Paste your SQL here — any dialect, any mess…"></textarea>
+      <div class="code-wrap">
+        <div class="ln" id="in-ln">1</div>
+        <textarea id="inp" spellcheck="false"
+          placeholder="Paste your SQL here — any dialect, any mess…"
+          oninput="syncInLn()" onscroll="syncInLnScroll()"></textarea>
+      </div>
     </div>
     <div class="panel">
-      <div class="panel-head">
-        <span class="panel-label">Formatted output</span>
-        <div style="display:flex;gap:7px;align-items:center;">
+      <div class="phead">
+        <span class="plabel">Formatted output</span>
+        <div style="display:flex;gap:6px;align-items:center">
           <button class="copy-btn" onclick="copyOut()">Copy</button>
           <span class="badge b-wait" id="badge">Waiting</span>
         </div>
       </div>
-      <div id="out">Click "Format SQL" to see the result…</div>
+      <div class="out-scroll" id="out-scroll">
+        <div class="out-inner">
+          <div class="out-ln" id="out-ln">1</div>
+          <div class="out-code" id="out">Click "Format SQL" to see the result…</div>
+        </div>
+      </div>
     </div>
   </div>
 
-  <!-- Error -->
   <div class="err-box" id="err-box"></div>
-
-  <!-- Stats -->
-  <div class="stats" id="stats" style="display:none;">
-    <div class="stat"><div class="stat-n" id="sb">—</div><div class="stat-l">Lines before</div></div>
-    <div class="stat"><div class="stat-n" id="sa">—</div><div class="stat-l">Lines after</div></div>
-    <div class="stat"><div class="stat-n" id="sc">—</div><div class="stat-l">Clauses</div></div>
-    <div class="stat"><div class="stat-n" id="sq">—</div><div class="stat-l">Subqueries / CTEs</div></div>
+  <div class="stats" id="stats" style="display:none">
+    <div class="stat"><div class="sn" id="sb">—</div><div class="sl">Lines before</div></div>
+    <div class="stat"><div class="sn" id="sa">—</div><div class="sl">Lines after</div></div>
+    <div class="stat"><div class="sn" id="sc">—</div><div class="sl">Clauses</div></div>
+    <div class="stat"><div class="sn" id="sq">—</div><div class="sl">Subqueries / CTEs</div></div>
   </div>
-
 </main>
 
-<!-- Footer -->
 <footer>
-  <div class="footer-copy">
-    &copy; 2026 EigenZ Solutions LLC. SQL Dialect Formatter by EigenZ Solutions LLC. All rights reserved.
-  </div>
-  <div class="footer-links">
+  <div class="fcopy">&copy; 2026 EigenZ Solutions LLC. SQL Dialect Formatter by EigenZ Solutions LLC. All rights reserved.</div>
+  <div class="flinks">
     <a href="#">Documentation</a>
     <a href="#">VS Code Extension</a>
     <a href="#">GitHub</a>
@@ -719,14 +422,53 @@ function formatSQL(raw, indentSize, commaPos) {
       if (!tok) return;
 
       if (/^SELECT/.test(tok)) {
-        outLines.push('SELECT');
-        const cols = splitByCommaDepth0(tok.replace(/^SELECT\s*/,''));
+        let rest = tok.replace(/^SELECT\s*/,'');
+        let selectKw = 'SELECT';
+        // Keep DISTINCT on the same line as SELECT, not as a spurious first column
+        if (/^DISTINCT\b/i.test(rest)) {
+          selectKw = 'SELECT DISTINCT';
+          rest = rest.replace(/^DISTINCT\s*/i,'');
+        }
+        outLines.push(selectKw);
+        const cols = splitByCommaDepth0(rest).map(c => c.trim()).filter(Boolean);
+
+        // Find the last index that has real SQL content (not just comment placeholders).
+        // Used for trailing-comma logic so the last real column gets a comma only
+        // when there are further real columns after it.
+        const CMT_ONLY = /^(\xABCMT\d+\xBB\s*)+$/;
+        let lastRealIdx = cols.length - 1;
+        for (let k = cols.length - 1; k >= 0; k--) {
+          if (!CMT_ONLY.test(cols[k])) { lastRealIdx = k; break; }
+        }
+
         cols.forEach((col, idx) => {
-          col = col.trim();
-          const isLast = idx===cols.length-1;
+          if (!col) return;
+
+          // Pure comment placeholder(s) — split onto individual indented lines, no comma
+          if (CMT_ONLY.test(col)) {
+            const tokens = col.match(/\xABCMT\d+\xBB/g) || [];
+            tokens.forEach(t => outLines.push(PAD + t));
+            return;
+          }
+
+          // Extract any LEADING comment placeholders (comment was on its own line
+          // before this column in the original SQL — output each on its own line first)
+          let remaining = col;
+          const leadingCmts = [];
+          let lm;
+          while ((lm = remaining.match(/^(\xABCMT\d+\xBB)\s*/))) {
+            leadingCmts.push(lm[1]);
+            remaining = remaining.slice(lm[0].length);
+          }
+          leadingCmts.forEach(t => outLines.push(PAD + t));
+
+          if (!remaining.trim()) return;   // nothing left after stripping comments
+
+          // Real column — comma based on whether this is the last real column
+          const isLast = idx === lastRealIdx;
           outLines.push(commaPos==='after'
-            ? PAD+col+(isLast?'':',')
-            : PAD+(idx===0?'  ':' ,')+col);
+            ? PAD+remaining+(isLast?'':',')
+            : PAD+(idx===0?'  ':' ,')+remaining);
         });
 
       } else if (/^FROM/.test(tok)) {
@@ -790,6 +532,7 @@ function formatSQL(raw, indentSize, commaPos) {
   }
 }
 
+
 function detectDialect(sql) {
   if (/distribution\s*=\s*(hash|round_robin|replicate)/i.test(sql) ||
       /clustered\s+columnstore\s+index/i.test(sql) ||
@@ -817,18 +560,17 @@ function detectDialect(sql) {
   return 'Generic SQL';
 }
 
-
 // ── Syntax highlight ──────────────────────────────────────────────────────────
 function hl(sql) {
   return sql
     .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
-    .replace(/'[^']*'/g, m => `<span class="str">${m}</span>`)
-    .replace(/(--[^\n]*)/g, m => `<span class="cmt">${m}</span>`)
-    .replace(/\b(SELECT|FROM|WHERE|LEFT|RIGHT|INNER|OUTER|JOIN|ON|GROUP BY|ORDER BY|HAVING|LIMIT|AND|OR|NOT|IN|AS|DISTINCT|WITH|UNION|ALL|EXISTS|BETWEEN|IS|NULL|TRUE|FALSE|ASC|DESC|CASE|WHEN|THEN|ELSE|END|MERGE|USING|MATCHED|INSERT|UPDATE|DELETE|VALUES|SET|EXTERNAL|STORED|LOCATION|ROW|FORMAT|SERDE|OPTIMIZE|VACUUM|ZORDER|DESCRIBE|HISTORY|DISTRIBUTION|CLUSTERED|COLUMNSTORE)\b/g,
-      m => `<span class="kw">${m}</span>`)
-    .replace(/\b(AVG|SUM|COUNT|MIN|MAX|COALESCE|NULLIF|CAST|TRIM|LOWER|UPPER|CONCAT|NOW|ROUND|ABS|LENGTH|DATE_TRUNC|REPLACE|IFF|ZEROIFNULL|UNNEST|FLATTEN|EXPLODE|COLLECT_LIST)\b/g,
-      m => `<span class="fn">${m}</span>`)
-    .replace(/\b(\d+(?:\.\d+)?)\b/g, m => `<span class="num">${m}</span>`);
+    .replace(/'[^']*'/g, m => '<span class="str">'+m+'</span>')
+    .replace(/(--[^\n]*)/g, m => '<span class="cmt">'+m+'</span>')
+    .replace(/\b(SELECT DISTINCT|SELECT|FROM|WHERE|LEFT JOIN|RIGHT JOIN|INNER JOIN|OUTER JOIN|JOIN|ON|USING|GROUP BY|ORDER BY|HAVING|LIMIT|AND|OR|NOT|IN|AS|DISTINCT|WITH|UNION ALL|UNION|ALL|EXISTS|BETWEEN|IS NOT NULL|IS NULL|IS|NULL|TRUE|FALSE|ASC|DESC|CASE|WHEN|THEN|ELSE|END|MERGE|MATCHED|INSERT|UPDATE|DELETE|VALUES|SET|EXTERNAL|STORED|LOCATION|OPTIMIZE|VACUUM|ZORDER|DESCRIBE|HISTORY|DISTRIBUTION|CLUSTERED|COLUMNSTORE)\b/g,
+      m => '<span class="kw">'+m+'</span>')
+    .replace(/\b(AVG|SUM|COUNT|MIN|MAX|COALESCE|NULLIF|CAST|TRIM|LOWER|UPPER|CONCAT|NOW|ROUND|ABS|LENGTH|DATE_TRUNC|REPLACE|IFF|ZEROIFNULL|UNNEST|FLATTEN|EXPLODE|COLLECT_LIST|DATE_PART|DATEADD|DATEDIFF)\b/g,
+      m => '<span class="fn">'+m+'</span>')
+    .replace(/\b(\d+(?:\.\d+)?)\b/g, m => '<span class="num">'+m+'</span>');
 }
 
 // ── Theme ─────────────────────────────────────────────────────────────────────
@@ -838,18 +580,51 @@ function toggleTheme() {
   html.setAttribute('data-theme', next);
   localStorage.setItem('eigenzsql-theme', next);
 }
-
-// Restore saved theme
 (function() {
   const saved = localStorage.getItem('eigenzsql-theme');
   if (saved) document.documentElement.setAttribute('data-theme', saved);
 })();
 
+// ── Line numbers — input panel ────────────────────────────────────────────────
+function makeLineNums(n) {
+  let s = '';
+  for (let i = 1; i <= n; i++) s += i + '\n';
+  return s.trimEnd();
+}
+
+function syncInLn() {
+  const ta   = document.getElementById('inp');
+  const ln   = document.getElementById('in-ln');
+  const lines = ta.value === '' ? 1 : ta.value.split('\n').length;
+  ln.textContent = makeLineNums(lines);
+  ln.scrollTop   = ta.scrollTop;
+}
+
+function syncInLnScroll() {
+  const ta = document.getElementById('inp');
+  const ln = document.getElementById('in-ln');
+  ln.scrollTop = ta.scrollTop;
+}
+
+// ── Line numbers — output panel ───────────────────────────────────────────────
+function setOutLineNums(text) {
+  const ln    = document.getElementById('out-ln');
+  const lines = text === '' ? 1 : text.split('\n').length;
+  ln.textContent = makeLineNums(lines);
+}
+
+document.getElementById('out-scroll').addEventListener('scroll', function() {
+  // Keep line numbers in sync when output is scrolled horizontally or vertically.
+  // Line nums are in the same flex row so vertical scroll is automatic via the
+  // out-inner flex container, but we track scrollTop on out-ln for safety.
+  document.getElementById('out-ln').scrollTop = this.scrollTop;
+});
+
 // ── State ─────────────────────────────────────────────────────────────────────
 const SAMPLE = "with monthly_sales as (select date_trunc('month',created_at) as month,sum(total) as revenue from orders where status='complete' group by 1),big_spenders as (select user_id,sum(total) as lifetime_value from orders group by user_id having sum(total)>500) select u.id,u.name,u.email,ms.month,ms.revenue,bs.lifetime_value from users u join monthly_sales ms on u.created_at<=ms.month join big_spenders bs on u.id=bs.user_id where u.active=true and ms.revenue>(select avg(revenue) from monthly_sales) order by bs.lifetime_value desc limit 50";
 let lastPlain = '';
 
-// ── Actions ───────────────────────────────────────────────────────────────────
+// ── Format ────────────────────────────────────────────────────────────────────
 function doFormat() {
   const raw    = document.getElementById('inp').value.trim();
   const errEl  = document.getElementById('err-box');
@@ -866,18 +641,19 @@ function doFormat() {
   const indent     = parseInt(document.getElementById('indent').value);
   const dialect    = dialectSel === 'auto' ? detectDialect(raw) : dialectSel;
 
-  const { formatted, error } = formatSQL(raw, indent, comma);
-  if (error) {
-    errEl.textContent = 'Formatter error: ' + error;
+  const result = formatSQL(raw, indent, comma);
+  if (result.error) {
+    errEl.textContent = 'Formatter error: ' + result.error;
     errEl.style.display = 'block';
     return;
   }
 
-  lastPlain = '-- Dialect: ' + dialect + '\n' + formatted;
+  lastPlain = '-- Dialect: ' + dialect + '\n' + result.formatted;
 
   const outEl = document.getElementById('out');
   outEl.innerHTML = hl(lastPlain);
-  outEl.className = 'ready';
+  outEl.className = 'out-code ready';
+  setOutLineNums(lastPlain);
 
   document.getElementById('badge').textContent = 'Formatted';
   document.getElementById('badge').className   = 'badge b-ok';
@@ -886,8 +662,8 @@ function doFormat() {
   pill.textContent = dialect;
   pill.style.display = 'inline-block';
 
-  const clauseCount = (formatted.match(/^(SELECT|FROM|WHERE|LEFT JOIN|RIGHT JOIN|JOIN|GROUP BY|ORDER BY|HAVING|LIMIT)/gm) || []).length;
-  const subqCount   = (formatted.match(/\(\n\s+SELECT/g) || []).length;
+  const clauseCount = (result.formatted.match(/^(SELECT|SELECT DISTINCT|FROM|WHERE|LEFT JOIN|RIGHT JOIN|JOIN|GROUP BY|ORDER BY|HAVING|LIMIT)/gm) || []).length;
+  const subqCount   = (result.formatted.match(/\(\n\s+SELECT/g) || []).length;
 
   document.getElementById('sb').textContent = raw.split('\n').length;
   document.getElementById('sa').textContent = lastPlain.split('\n').length;
@@ -898,31 +674,36 @@ function doFormat() {
 
 function copyOut() {
   if (!lastPlain) return;
-  navigator.clipboard.writeText(lastPlain).then(() => {
+  navigator.clipboard.writeText(lastPlain).then(function() {
     const b = document.querySelector('.copy-btn');
-    const orig = b.textContent;
     b.textContent = 'Copied!';
     b.style.color = 'var(--tag-ok-fg)';
-    setTimeout(() => { b.textContent = orig; b.style.color = ''; }, 1600);
+    setTimeout(function() { b.textContent = 'Copy'; b.style.color = ''; }, 1600);
   });
 }
 
 function loadSample() {
   document.getElementById('inp').value = SAMPLE;
+  syncInLn();
 }
 
 function clearAll() {
   document.getElementById('inp').value = '';
+  syncInLn();
   lastPlain = '';
   const o = document.getElementById('out');
-  o.innerHTML = 'Click \"Format SQL\" to see the result…';
-  o.className = '';
+  o.innerHTML = 'Click \"Format SQL\" to see the result\u2026';
+  o.className = 'out-code';
+  setOutLineNums('');
   document.getElementById('badge').textContent = 'Waiting';
   document.getElementById('badge').className   = 'badge b-wait';
   document.getElementById('dialect-pill').style.display = 'none';
   document.getElementById('stats').style.display = 'none';
   document.getElementById('err-box').style.display = 'none';
 }
+
+// Init line numbers on load
+syncInLn();
 </script>
 </body>
 </html>
