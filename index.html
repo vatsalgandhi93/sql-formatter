@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>SQL Dialect Formatter — EigenZ Solutions LLC</title>
+<title>SQL Dialect Formatter v1.6.0 — EigenZ Solutions LLC</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
 <style>
@@ -210,7 +210,7 @@ footer{padding:14px 24px;border-top:1px solid var(--border);display:flex;align-i
 </main>
 
 <footer>
-  <div class="fcopy">&copy; 2026 EigenZ Solutions LLC. SQL Dialect Formatter by EigenZ Solutions LLC. All rights reserved.</div>
+  <div class="fcopy">&copy; 2026 EigenZ Solutions LLC. &nbsp;<span style="color:var(--accent);font-family:var(--font-code);font-size:10px">v1.6.0</span> SQL Dialect Formatter by EigenZ Solutions LLC. All rights reserved.</div>
   <div class="flinks">
     <a href="#">Documentation</a>
     <a href="#">VS Code Extension</a>
@@ -370,7 +370,7 @@ function formatSQL(raw, indentSize, commaPos) {
     const comments = [];
     s = s.replace(/--[^\n]*/g, m => {
       comments.push(m);
-      return `\xABCMT${comments.length-1}\xBB`;   // «CMTn»
+      return `«CMT${comments.length-1}»`;   // «CMTn»
     });
 
     // 3. Collapse to a single line (comment placeholders are opaque now)
@@ -380,8 +380,8 @@ function formatSQL(raw, indentSize, commaPos) {
     //    WITH / SELECT detection. Output each on its own line at the end.
     const headerComments = [];
     let leadMatch;
-    while ((leadMatch = s.match(/^\xABCMT(\d+)\xBB\s*/))) {
-      headerComments.push(`\xABCMT${leadMatch[1]}\xBB`);
+    while ((leadMatch = s.match(/^«CMT(\d+)»\s*/))) {
+      headerComments.push(`«CMT${leadMatch[1]}»`);
       s = s.slice(leadMatch[0].length);
     }
 
@@ -393,7 +393,7 @@ function formatSQL(raw, indentSize, commaPos) {
 
     // 7. Protect string literals
     const strings = [];
-    s = s.replace(/'[^']*'/g, m => { strings.push(m); return `\xA7${strings.length-1}\xA7`; });
+    s = s.replace(/'[^']*'/g, m => { strings.push(m); return `§${strings.length-1}§`; });
 
     const outLines = [];
 
@@ -417,11 +417,15 @@ function formatSQL(raw, indentSize, commaPos) {
 
     // 9. Split and render main query clauses
     const clauses = splitIntoClauses(mainSQL);
+    let prevWasQueryEnd = false;  // track if previous clause was FROM/HAVING/LIMIT/ORDER BY
     clauses.forEach(tok => {
       tok = tok.trim();
       if (!tok) return;
 
       if (/^SELECT/.test(tok)) {
+        // Blank line between separate queries (new SELECT after end of previous query)
+        if (prevWasQueryEnd && outLines.length > 0) outLines.push('');
+        prevWasQueryEnd = false;
         let rest = tok.replace(/^SELECT\s*/,'');
         let selectKw = 'SELECT';
         // Keep DISTINCT on the same line as SELECT, not as a spurious first column
@@ -435,7 +439,7 @@ function formatSQL(raw, indentSize, commaPos) {
         // Find the last index that has real SQL content (not just comment placeholders).
         // Used for trailing-comma logic so the last real column gets a comma only
         // when there are further real columns after it.
-        const CMT_ONLY = /^(\xABCMT\d+\xBB\s*)+$/;
+        const CMT_ONLY = /^(«CMT\d+»\s*)+$/;
         let lastRealIdx = cols.length - 1;
         for (let k = cols.length - 1; k >= 0; k--) {
           if (!CMT_ONLY.test(cols[k])) { lastRealIdx = k; break; }
@@ -446,7 +450,7 @@ function formatSQL(raw, indentSize, commaPos) {
 
           // Pure comment placeholder(s) — split onto individual indented lines, no comma
           if (CMT_ONLY.test(col)) {
-            const tokens = col.match(/\xABCMT\d+\xBB/g) || [];
+            const tokens = col.match(/«CMT\d+»/g) || [];
             tokens.forEach(t => outLines.push(PAD + t));
             return;
           }
@@ -456,7 +460,7 @@ function formatSQL(raw, indentSize, commaPos) {
           let remaining = col;
           const leadingCmts = [];
           let lm;
-          while ((lm = remaining.match(/^(\xABCMT\d+\xBB)\s*/))) {
+          while ((lm = remaining.match(/^(«CMT\d+»)\s*/))) {
             leadingCmts.push(lm[1]);
             remaining = remaining.slice(lm[0].length);
           }
@@ -464,29 +468,72 @@ function formatSQL(raw, indentSize, commaPos) {
 
           if (!remaining.trim()) return;   // nothing left after stripping comments
 
-          // Real column — comma based on whether this is the last real column
-          const isLast = idx === lastRealIdx;
+          // Extract TRAILING comment placeholders when there are 2+.
+          // Two or more separate CMT tokens after real SQL must have come from
+          // separate original lines (you can't write two -- comments on one line).
+          // A single trailing CMT is kept inline (ambiguous — could be intentional).
+          const trailingCmts = [];
+          const trailMatch = remaining.match(/(\s+«CMT\d+»)+$/u);
+          if (trailMatch) {
+            const tokens = trailMatch[0].match(/«CMT\d+»/gu) || [];
+            if (tokens.length >= 2) {
+              tokens.forEach(t => trailingCmts.push(t));
+              remaining = remaining.slice(0, remaining.length - trailMatch[0].length).trim();
+            }
+          }
+
+          if (!remaining.trim()) return;
+
+          // Real column — comma based on position.
+          // If there are comment-only items AFTER the last real column (commented-out
+          // columns), preserve the trailing comma so intent is clear.
+          const hasCommentsAfter = lastRealIdx < cols.length - 1;
+          const isLast = idx === lastRealIdx && !hasCommentsAfter && trailingCmts.length === 0;
           outLines.push(commaPos==='after'
             ? PAD+remaining+(isLast?'':',')
             : PAD+(idx===0?'  ':' ,')+remaining);
+
+          // Trailing comments each on their own indented line
+          trailingCmts.forEach(t => outLines.push(PAD + t));
         });
 
       } else if (/^FROM/.test(tok)) {
         outLines.push(tok);
+        prevWasQueryEnd = true;
 
       } else if (/^(LEFT JOIN|RIGHT JOIN|INNER JOIN|OUTER JOIN|JOIN)/.test(tok)) {
         const m      = tok.match(/^(LEFT JOIN|RIGHT JOIN|INNER JOIN|OUTER JOIN|JOIN)\s*/);
+        const joinKw = m[1];
         const rest   = tok.slice(m[0].length);
-        const onIdx  = rest.search(/\bON\b/);
-        const usIdx  = rest.search(/\bUSING\b/);
-        if (onIdx > -1) {
-          outLines.push(m[1]+' '+rest.slice(0,onIdx).trim());
-          outLines.push(PAD+'ON '+rest.slice(onIdx+2).trim());
-        } else if (usIdx > -1) {
-          outLines.push(m[1]+' '+rest.slice(0,usIdx).trim());
-          outLines.push(PAD+'USING '+rest.slice(usIdx+5).trim());
+
+        // Depth-aware search: find ON / USING only at paren-depth 0
+        // so we never match keywords inside a subquery table expression
+        let onIdx = -1, usIdx = -1, jd = 0;
+        for (let k = 0; k < rest.length; k++) {
+          if (rest[k] === '(') { jd++; continue; }
+          if (rest[k] === ')') { jd--; continue; }
+          if (jd === 0) {
+            const pre = k === 0 || /\s/.test(rest[k-1]);
+            if (pre && /^ON[\s(]/i.test(rest.slice(k)))    { onIdx = k; break; }
+            if (pre && /^USING[\s(]/i.test(rest.slice(k))) { usIdx = k; break; }
+          }
+        }
+
+        if (onIdx > -1 || usIdx > -1) {
+          const isOn      = onIdx > -1;
+          const condIdx   = isOn ? onIdx : usIdx;
+          const condKw    = isOn ? 'ON' : 'USING';
+          const condLen   = isOn ? 2    : 5;
+          const tableExpr = rest.slice(0, condIdx).trim();
+          const condition = rest.slice(condIdx + condLen).trim();
+
+          // Expand any subquery inside the table expression (bracket-aligned)
+          const expandedTable = renderExpr(tableExpr, joinKw + ' ', indentSize, commaPos);
+          outLines.push(expandedTable);
+          outLines.push(PAD + condKw + ' ' + condition);
         } else {
-          outLines.push(tok);
+          // No ON/USING — bare join, still expand subquery if present
+          outLines.push(renderExpr(rest.trim(), joinKw + ' ', indentSize, commaPos));
         }
 
       } else if (/^(WHERE|HAVING)/.test(tok)) {
@@ -511,6 +558,7 @@ function formatSQL(raw, indentSize, commaPos) {
       } else {
         // Unknown token (inline comment placeholder, LIMIT, etc.)
         outLines.push(tok);
+        if (/^LIMIT/.test(tok)) prevWasQueryEnd = true;
       }
     });
 
@@ -519,10 +567,10 @@ function formatSQL(raw, indentSize, commaPos) {
                + outLines.join('\n');
 
     strings.forEach((str, i) => {
-      result = result.replace(new RegExp(`\xA7${i}\xA7`,'g'), str);
+      result = result.replace(new RegExp(`§${i}§`,'g'), str);
     });
     comments.forEach((cmt, i) => {
-      result = result.replace(`\xABCMT${i}\xBB`, cmt);
+      result = result.replace(`«CMT${i}»`, cmt);
     });
 
     return { formatted: result, error: null };
@@ -531,7 +579,6 @@ function formatSQL(raw, indentSize, commaPos) {
     return { formatted: raw, error: err.message };
   }
 }
-
 
 function detectDialect(sql) {
   if (/distribution\s*=\s*(hash|round_robin|replicate)/i.test(sql) ||
@@ -552,7 +599,7 @@ function detectDialect(sql) {
       (/using\s+delta/i.test(sql) && !/lateral\s+view/i.test(sql))) return 'Databricks';
   if (/struct\s*<|unnest\s*\(|qualify\b|`\w+\.\w+\.\w+`|farm_fingerprint/i.test(sql)) return 'BigQuery';
   if (/variant\b|object_construct|flatten\s*\(|iff\s*\(|\$\d|zeroifnull/i.test(sql)) return 'Snowflake';
-  if (/::[\w]+|returning\b|ilike\b|jsonb?\b|on conflict|generate_series/i.test(sql)) return 'PostgreSQL';
+  if (/::\w+|returning\b|ilike\b|jsonb?\b|on conflict|generate_series/i.test(sql)) return 'PostgreSQL';
   if (/nolock|nvarchar|select\s+top\s+\d|cross apply|outer apply/i.test(sql)) return 'SQL Server';
   if (/auto_increment|engine\s*=|group_concat/i.test(sql)) return 'MySQL';
   if (/distkey|sortkey|diststyle|unload\b|stv_\w+/i.test(sql)) return 'Amazon Redshift';
@@ -564,145 +611,130 @@ function detectDialect(sql) {
 function hl(sql) {
   return sql
     .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
-    .replace(/'[^']*'/g, m => '<span class="str">'+m+'</span>')
-    .replace(/(--[^\n]*)/g, m => '<span class="cmt">'+m+'</span>')
-    .replace(/\b(SELECT DISTINCT|SELECT|FROM|WHERE|LEFT JOIN|RIGHT JOIN|INNER JOIN|OUTER JOIN|JOIN|ON|USING|GROUP BY|ORDER BY|HAVING|LIMIT|AND|OR|NOT|IN|AS|DISTINCT|WITH|UNION ALL|UNION|ALL|EXISTS|BETWEEN|IS NOT NULL|IS NULL|IS|NULL|TRUE|FALSE|ASC|DESC|CASE|WHEN|THEN|ELSE|END|MERGE|MATCHED|INSERT|UPDATE|DELETE|VALUES|SET|EXTERNAL|STORED|LOCATION|OPTIMIZE|VACUUM|ZORDER|DESCRIBE|HISTORY|DISTRIBUTION|CLUSTERED|COLUMNSTORE)\b/g,
-      m => '<span class="kw">'+m+'</span>')
-    .replace(/\b(AVG|SUM|COUNT|MIN|MAX|COALESCE|NULLIF|CAST|TRIM|LOWER|UPPER|CONCAT|NOW|ROUND|ABS|LENGTH|DATE_TRUNC|REPLACE|IFF|ZEROIFNULL|UNNEST|FLATTEN|EXPLODE|COLLECT_LIST|DATE_PART|DATEADD|DATEDIFF)\b/g,
-      m => '<span class="fn">'+m+'</span>')
-    .replace(/\b(\d+(?:\.\d+)?)\b/g, m => '<span class="num">'+m+'</span>');
+    .replace(/'[^']*'/g, function(m){ return '<span class="str">'+m+'</span>'; })
+    .replace(/(--[^\n]*)/g, function(m){ return '<span class="cmt">'+m+'</span>'; })
+    .replace(/\b(SELECT DISTINCT|SELECT|FROM|WHERE|LEFT JOIN|RIGHT JOIN|INNER JOIN|OUTER JOIN|JOIN|ON|USING|GROUP BY|ORDER BY|HAVING|LIMIT|AND|OR|NOT|IN|AS|DISTINCT|WITH|UNION ALL|UNION|ALL|EXISTS|BETWEEN|IS NOT NULL|IS NULL|IS|NULL|TRUE|FALSE|ASC|DESC|CASE|WHEN|THEN|ELSE|END|MERGE|MATCHED|INSERT|UPDATE|DELETE|VALUES|SET)\b/g,
+      function(m){ return '<span class="kw">'+m+'</span>'; })
+    .replace(/\b(AVG|SUM|COUNT|MIN|MAX|COALESCE|NULLIF|CAST|TRIM|LOWER|UPPER|CONCAT|NOW|ROUND|ABS|LENGTH|DATE_TRUNC|REPLACE|IFF|ZEROIFNULL|UNNEST|FLATTEN|EXPLODE|COLLECT_LIST)\b/g,
+      function(m){ return '<span class="fn">'+m+'</span>'; })
+    .replace(/\b(\d+(?:\.\d+)?)\b/g, function(m){ return '<span class="num">'+m+'</span>'; });
 }
 
 // ── Theme ─────────────────────────────────────────────────────────────────────
 function toggleTheme() {
-  const html = document.documentElement;
-  const next = html.getAttribute('data-theme') === 'light' ? 'dark' : 'light';
+  var html = document.documentElement;
+  var next = html.getAttribute('data-theme') === 'light' ? 'dark' : 'light';
   html.setAttribute('data-theme', next);
-  localStorage.setItem('eigenzsql-theme', next);
+  try { localStorage.setItem('eigenzsql-theme', next); } catch(e){}
 }
 (function() {
-  const saved = localStorage.getItem('eigenzsql-theme');
-  if (saved) document.documentElement.setAttribute('data-theme', saved);
+  try {
+    var saved = localStorage.getItem('eigenzsql-theme');
+    if (saved) document.documentElement.setAttribute('data-theme', saved);
+  } catch(e){}
 })();
 
-// ── Line numbers — input panel ────────────────────────────────────────────────
+// ── Line numbers ──────────────────────────────────────────────────────────────
 function makeLineNums(n) {
-  let s = '';
-  for (let i = 1; i <= n; i++) s += i + '\n';
-  return s.trimEnd();
+  var s = '';
+  for (var i = 1; i <= n; i++) s += i + '\n';
+  return s.trimEnd ? s.trimEnd() : s.replace(/\n$/, '');
 }
-
 function syncInLn() {
-  const ta   = document.getElementById('inp');
-  const ln   = document.getElementById('in-ln');
-  const lines = ta.value === '' ? 1 : ta.value.split('\n').length;
-  ln.textContent = makeLineNums(lines);
+  var ta   = document.getElementById('inp');
+  var ln   = document.getElementById('in-ln');
+  var n    = ta.value === '' ? 1 : ta.value.split('\n').length;
+  ln.textContent = makeLineNums(n);
   ln.scrollTop   = ta.scrollTop;
 }
-
 function syncInLnScroll() {
-  const ta = document.getElementById('inp');
-  const ln = document.getElementById('in-ln');
+  var ta = document.getElementById('inp');
+  var ln = document.getElementById('in-ln');
   ln.scrollTop = ta.scrollTop;
 }
-
-// ── Line numbers — output panel ───────────────────────────────────────────────
-function setOutLineNums(text) {
-  const ln    = document.getElementById('out-ln');
-  const lines = text === '' ? 1 : text.split('\n').length;
-  ln.textContent = makeLineNums(lines);
+function setOutLn(text) {
+  var ln = document.getElementById('out-ln');
+  var n  = text === '' ? 1 : text.split('\n').length;
+  ln.textContent = makeLineNums(n);
 }
-
 document.getElementById('out-scroll').addEventListener('scroll', function() {
-  // Keep line numbers in sync when output is scrolled horizontally or vertically.
-  // Line nums are in the same flex row so vertical scroll is automatic via the
-  // out-inner flex container, but we track scrollTop on out-ln for safety.
   document.getElementById('out-ln').scrollTop = this.scrollTop;
 });
 
 // ── State ─────────────────────────────────────────────────────────────────────
-const SAMPLE = "with monthly_sales as (select date_trunc('month',created_at) as month,sum(total) as revenue from orders where status='complete' group by 1),big_spenders as (select user_id,sum(total) as lifetime_value from orders group by user_id having sum(total)>500) select u.id,u.name,u.email,ms.month,ms.revenue,bs.lifetime_value from users u join monthly_sales ms on u.created_at<=ms.month join big_spenders bs on u.id=bs.user_id where u.active=true and ms.revenue>(select avg(revenue) from monthly_sales) order by bs.lifetime_value desc limit 50";
-let lastPlain = '';
+var SAMPLE = "with monthly_sales as (select date_trunc('month',created_at) as month,sum(total) as revenue from orders where status='complete' group by 1),big_spenders as (select user_id,sum(total) as lifetime_value from orders group by user_id having sum(total)>500) select u.id,u.name,u.email,ms.month,ms.revenue,bs.lifetime_value from users u join monthly_sales ms on u.created_at<=ms.month join big_spenders bs on u.id=bs.user_id where u.active=true and ms.revenue>(select avg(revenue) from monthly_sales) order by bs.lifetime_value desc limit 50";
+var lastPlain = '';
 
 // ── Format ────────────────────────────────────────────────────────────────────
 function doFormat() {
-  const raw    = document.getElementById('inp').value.trim();
-  const errEl  = document.getElementById('err-box');
+  var raw   = document.getElementById('inp').value.trim();
+  var errEl = document.getElementById('err-box');
   errEl.style.display = 'none';
-
   if (!raw) {
     errEl.textContent = 'Paste some SQL into the input panel first.';
     errEl.style.display = 'block';
     return;
   }
+  var dialectSel = document.getElementById('dialect').value;
+  var comma      = document.getElementById('commas').value;
+  var indent     = parseInt(document.getElementById('indent').value);
+  var dialect    = dialectSel === 'auto' ? detectDialect(raw) : dialectSel;
 
-  const dialectSel = document.getElementById('dialect').value;
-  const comma      = document.getElementById('commas').value;
-  const indent     = parseInt(document.getElementById('indent').value);
-  const dialect    = dialectSel === 'auto' ? detectDialect(raw) : dialectSel;
-
-  const result = formatSQL(raw, indent, comma);
+  var result = formatSQL(raw, indent, comma);
   if (result.error) {
-    errEl.textContent = 'Formatter error: ' + result.error;
+    errEl.textContent = 'Error: ' + result.error;
     errEl.style.display = 'block';
     return;
   }
-
   lastPlain = '-- Dialect: ' + dialect + '\n' + result.formatted;
 
-  const outEl = document.getElementById('out');
+  var outEl = document.getElementById('out');
   outEl.innerHTML = hl(lastPlain);
   outEl.className = 'out-code ready';
-  setOutLineNums(lastPlain);
+  setOutLn(lastPlain);
 
   document.getElementById('badge').textContent = 'Formatted';
   document.getElementById('badge').className   = 'badge b-ok';
-
-  const pill = document.getElementById('dialect-pill');
+  var pill = document.getElementById('dialect-pill');
   pill.textContent = dialect;
   pill.style.display = 'inline-block';
 
-  const clauseCount = (result.formatted.match(/^(SELECT|SELECT DISTINCT|FROM|WHERE|LEFT JOIN|RIGHT JOIN|JOIN|GROUP BY|ORDER BY|HAVING|LIMIT)/gm) || []).length;
-  const subqCount   = (result.formatted.match(/\(\n\s+SELECT/g) || []).length;
+  var linesB   = raw.split('\n').length;
+  var linesA   = lastPlain.split('\n').length;
+  var clauses  = (result.formatted.match(/^(SELECT DISTINCT|SELECT|FROM|WHERE|LEFT JOIN|RIGHT JOIN|JOIN|GROUP BY|ORDER BY|HAVING|LIMIT)/gm) || []).length;
+  var subqs    = (result.formatted.match(/\(\n\s+SELECT/g) || []).length;
 
-  document.getElementById('sb').textContent = raw.split('\n').length;
-  document.getElementById('sa').textContent = lastPlain.split('\n').length;
-  document.getElementById('sc').textContent = clauseCount;
-  document.getElementById('sq').textContent = subqCount;
+  document.getElementById('sb').textContent = linesB;
+  document.getElementById('sa').textContent = linesA;
+  document.getElementById('sc').textContent = clauses;
+  document.getElementById('sq').textContent = subqs;
   document.getElementById('stats').style.display = 'flex';
 }
 
 function copyOut() {
   if (!lastPlain) return;
   navigator.clipboard.writeText(lastPlain).then(function() {
-    const b = document.querySelector('.copy-btn');
+    var b = document.querySelector('.copy-btn');
     b.textContent = 'Copied!';
     b.style.color = 'var(--tag-ok-fg)';
-    setTimeout(function() { b.textContent = 'Copy'; b.style.color = ''; }, 1600);
+    setTimeout(function(){ b.textContent = 'Copy'; b.style.color = ''; }, 1600);
   });
 }
-
-function loadSample() {
-  document.getElementById('inp').value = SAMPLE;
-  syncInLn();
-}
-
+function loadSample() { document.getElementById('inp').value = SAMPLE; syncInLn(); }
 function clearAll() {
   document.getElementById('inp').value = '';
   syncInLn();
   lastPlain = '';
-  const o = document.getElementById('out');
-  o.innerHTML = 'Click \"Format SQL\" to see the result\u2026';
+  var o = document.getElementById('out');
+  o.innerHTML = 'Click \u201cFormat SQL\u201d to see the result\u2026';
   o.className = 'out-code';
-  setOutLineNums('');
+  setOutLn('');
   document.getElementById('badge').textContent = 'Waiting';
   document.getElementById('badge').className   = 'badge b-wait';
   document.getElementById('dialect-pill').style.display = 'none';
   document.getElementById('stats').style.display = 'none';
   document.getElementById('err-box').style.display = 'none';
 }
-
-// Init line numbers on load
 syncInLn();
 </script>
 </body>
