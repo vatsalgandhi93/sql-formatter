@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>SQL Dialect Formatter v1.11.0 — EigenZ Solutions LLC</title>
+<title>SQL Dialect Formatter v1.14.0 — EigenZ Solutions LLC</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
 <style>
@@ -82,12 +82,12 @@ select:hover,select:focus{border-color:var(--accent)}
 
 /* Code area with line numbers */
 .code-wrap{display:flex;flex:1;overflow:hidden;min-height:0;background:var(--bg-code)}
-.ln{font-family:var(--font-code);font-size:12.5px;line-height:1.7;color:var(--ln-fg);text-align:right;padding:14px 8px 14px 10px;background:var(--ln-bg);border-right:1px solid var(--ln-border);user-select:none;overflow:hidden;white-space:pre;flex-shrink:0;min-width:38px;transition:background .25s,color .25s}
+.ln{font-family:var(--font-code);font-size:12.5px;line-height:1.7;color:var(--ln-fg);text-align:right;padding:14px 8px 14px 10px;background:var(--ln-bg);border-right:1px solid var(--ln-border);user-select:none;overflow:hidden;white-space:pre;flex-shrink:0;min-width:38px;transition:background .25s,color .25s;z-index:2;box-shadow:1px 0 0 var(--ln-border)}
 textarea{flex:1;background:transparent;border:none;outline:none;resize:none;font-family:var(--font-code);font-size:12.5px;line-height:1.7;color:var(--text);padding:14px 14px 14px 10px;caret-color:var(--accent);overflow-y:auto;scrollbar-width:thin;scrollbar-color:var(--scroll) transparent;transition:color .25s;white-space:pre;overflow-wrap:normal}
 textarea::placeholder{color:var(--text-m);opacity:.5}
 .out-scroll{flex:1;overflow:scroll;scrollbar-width:thin;scrollbar-color:var(--scroll) transparent;overflow-x:auto}
 .out-inner{display:flex;min-height:100%}
-.out-ln{font-family:var(--font-code);font-size:12.5px;line-height:1.7;color:var(--ln-fg);text-align:right;padding:14px 8px 14px 10px;background:var(--ln-bg);border-right:1px solid var(--ln-border);user-select:none;white-space:pre;flex-shrink:0;min-width:38px;transition:background .25s,color .25s}
+.out-ln{font-family:var(--font-code);font-size:12.5px;line-height:1.7;color:var(--ln-fg);text-align:right;padding:14px 8px 14px 10px;background:var(--ln-bg);border-right:1px solid var(--ln-border);user-select:none;white-space:pre;flex-shrink:0;min-width:38px;transition:background .25s,color .25s;position:sticky;left:0;z-index:2;box-shadow:1px 0 0 var(--ln-border)}
 .out-code{flex:1;font-family:var(--font-code);font-size:12.5px;line-height:1.7;padding:14px 14px 14px 10px;white-space:pre;color:var(--text-m);font-style:italic;transition:color .25s}
 .out-code.ready{color:var(--text);font-style:normal}
 
@@ -210,7 +210,7 @@ footer{padding:14px 24px;border-top:1px solid var(--border);display:flex;align-i
 </main>
 
 <footer>
-  <div class="fcopy">&copy; 2026 EigenZ Solutions LLC. &nbsp;<span style="color:var(--accent);font-family:var(--font-code);font-size:10px">v1.11.0</span> SQL Dialect Formatter by EigenZ Solutions LLC. All rights reserved.</div>
+  <div class="fcopy">&copy; 2026 EigenZ Solutions LLC. &nbsp;<span style="color:var(--accent);font-family:var(--font-code);font-size:10px">v1.14.0</span> SQL Dialect Formatter by EigenZ Solutions LLC. All rights reserved.</div>
   <div class="flinks">
     <a href="#">Documentation</a>
     <a href="#">VS Code Extension</a>
@@ -225,17 +225,71 @@ footer{padding:14px 24px;border-top:1px solid var(--border);display:flex;align-i
 
 function upcase(s) {
   const KWS = [
+    // ── Top-level clauses ────────────────────────────────────────────────────
     'SELECT','FROM','LEFT JOIN','RIGHT JOIN','INNER JOIN','OUTER JOIN',
     'CROSS JOIN','LEFT OUTER JOIN','RIGHT OUTER JOIN','FULL JOIN','FULL OUTER JOIN','JOIN',
     'ON','USING','GROUP BY','ORDER BY','HAVING','QUALIFY','LIMIT','OFFSET','WHERE','AND','OR',
     'NOT IN','IN','AS','DISTINCT','WITH','WITH OFFSET','UNION ALL','UNION','INTERSECT','EXCEPT',
-    'EXISTS','BETWEEN','IS NOT NULL','IS NULL','TRUE','FALSE',
+    'EXISTS','BETWEEN','IS NOT NULL','IS NULL','TRUE','FALSE','NULL',
     'ASC','DESC','CASE','WHEN','THEN','ELSE','END',
     'OVER','PARTITION BY','ROWS BETWEEN','RANGE BETWEEN','UNBOUNDED PRECEDING',
     'UNBOUNDED FOLLOWING','CURRENT ROW','PRECEDING','FOLLOWING','NULLS FIRST','NULLS LAST',
-    'AVG','SUM','COUNT','MIN','MAX','UNNEST',
+
+    // ── Aggregate functions ─────────────────────────────────────────────────
+    'AVG','SUM','COUNT','COUNTIF','MIN','MAX','ANY_VALUE','STRING_AGG','ARRAY_AGG',
+    'GROUP_CONCAT','APPROX_COUNT_DISTINCT','APPROX_QUANTILES','APPROX_TOP_COUNT',
+    'BOOL_AND','BOOL_OR','LOGICAL_AND','LOGICAL_OR','BIT_AND','BIT_OR','BIT_XOR',
+    'STDDEV','STDDEV_POP','STDDEV_SAMP','VAR_POP','VAR_SAMP','VARIANCE',
+    'PERCENTILE_CONT','PERCENTILE_DISC',
+
+    // ── Window functions ────────────────────────────────────────────────────
     'ROW_NUMBER','RANK','DENSE_RANK','PERCENT_RANK','CUME_DIST','NTILE',
-    'LAG','LEAD','FIRST_VALUE','LAST_VALUE','NTH_VALUE'
+    'LAG','LEAD','FIRST_VALUE','LAST_VALUE','NTH_VALUE',
+
+    // ── String functions ────────────────────────────────────────────────────
+    'CONCAT','LENGTH','CHAR_LENGTH','LOWER','UPPER','TRIM','LTRIM','RTRIM','REVERSE',
+    'SUBSTRING','SUBSTR','REPLACE','LPAD','RPAD','POSITION','STRPOS','CHARINDEX',
+    'STARTS_WITH','ENDS_WITH','CONTAINS_SUBSTR',
+    'SPLIT','SPLIT_PART','STRING','TO_HEX','FROM_HEX','FORMAT',
+    'REGEXP_EXTRACT','REGEXP_EXTRACT_ALL','REGEXP_REPLACE','REGEXP_CONTAINS','REGEXP_MATCH',
+    'INITCAP','LEFT','RIGHT','REPEAT','TRANSLATE',
+
+    // ── Array functions ─────────────────────────────────────────────────────
+    'UNNEST','ARRAY','ARRAY_LENGTH','ARRAY_CONCAT','ARRAY_TO_STRING','ARRAY_REVERSE',
+    'ARRAY_DISTINCT','ARRAY_INTERSECT','ARRAY_UNION','GENERATE_ARRAY',
+    'GENERATE_DATE_ARRAY','GENERATE_TIMESTAMP_ARRAY','ORDINAL','SAFE_OFFSET','SAFE_ORDINAL',
+
+    // ── Date / time functions ───────────────────────────────────────────────
+    'DATE','DATETIME','TIME','TIMESTAMP',
+    'DATE_TRUNC','TIMESTAMP_TRUNC','DATETIME_TRUNC','TIME_TRUNC',
+    'DATE_ADD','DATE_SUB','DATE_DIFF',
+    'TIMESTAMP_ADD','TIMESTAMP_SUB','TIMESTAMP_DIFF',
+    'DATETIME_ADD','DATETIME_SUB','DATETIME_DIFF',
+    'TIME_ADD','TIME_SUB','TIME_DIFF',
+    'EXTRACT','FORMAT_DATE','FORMAT_DATETIME','FORMAT_TIME','FORMAT_TIMESTAMP',
+    'PARSE_DATE','PARSE_DATETIME','PARSE_TIME','PARSE_TIMESTAMP',
+    'CURRENT_DATE','CURRENT_TIME','CURRENT_DATETIME','CURRENT_TIMESTAMP',
+    'DATE_FROM_UNIX_DATE','UNIX_DATE','UNIX_SECONDS','UNIX_MILLIS','UNIX_MICROS',
+    'LAST_DAY','NOW','GETDATE','SYSDATE',
+
+    // ── Math functions ──────────────────────────────────────────────────────
+    'ABS','ROUND','CEIL','CEILING','FLOOR','SIGN','SQRT','POWER','POW',
+    'EXP','LOG','LN','LOG10','MOD','DIV','GREATEST','LEAST','TRUNC','TRUNCATE',
+    'PI','RAND','RANDOM','SIN','COS','TAN','ASIN','ACOS','ATAN','ATAN2',
+    'DEGREES','RADIANS',
+
+    // ── Conversion / NULL handling ──────────────────────────────────────────
+    'CAST','SAFE_CAST','CONVERT','TRY_CAST','TRY_CONVERT',
+    'COALESCE','IFNULL','NULLIF','NVL','NVL2','IFF','IF','DECODE','ZEROIFNULL',
+
+    // ── JSON functions ──────────────────────────────────────────────────────
+    'JSON_VALUE','JSON_QUERY','JSON_EXTRACT','JSON_EXTRACT_SCALAR','JSON_EXTRACT_ARRAY',
+    'TO_JSON','TO_JSON_STRING','PARSE_JSON','JSON_OBJECT','JSON_ARRAY','JSON_TYPE',
+    'OBJECT_CONSTRUCT','FLATTEN','GET_PATH','TRY_PARSE_JSON',
+
+    // ── Other commonly used ─────────────────────────────────────────────────
+    'EXPLODE','COLLECT_LIST','COLLECT_SET','HASH','MD5','SHA1','SHA256','SHA512',
+    'FARM_FINGERPRINT','GENERATE_UUID','UUID'
   ];
   KWS.forEach(kw => {
     s = s.replace(new RegExp('\\b' + kw.replace(/ /g,'\\s+') + '\\b','gi'), kw);
@@ -639,9 +693,56 @@ function formatSQL(raw, indentSize, commaPos) {
         });
 
       } else if (/^FROM/.test(tok)) {
-        const { clean: fromClean, cmts: fromCmts } = stripTrailingCmts(tok);
-        outLines.push(fromClean);
-        fromCmts.forEach(c => outLines.push(c));
+        // Extract anything after FROM. Then split by commas at depth 0 —
+        // comma-joined table sources (including UNNEST(...) AS alias) each get
+        // their own indented line, with comment placeholders pulled out cleanly.
+        const fromBody = tok.replace(/^FROM\s*/i, '');
+        const fromSources = splitByCommaDepth0(fromBody).map(s => s.trim()).filter(Boolean);
+
+        if (fromSources.length <= 1) {
+          // Single source — strip trailing comments, push as one line
+          const { clean: fromClean, cmts: fromCmts } = stripTrailingCmts(tok);
+          outLines.push(fromClean);
+          fromCmts.forEach(c => outLines.push(c));
+        } else {
+          // Multiple comma-separated sources — FROM on its own, each source indented
+          outLines.push('FROM');
+          // Reuse the same lead/trail comment extraction as SELECT columns
+          const CMT_ONLY = /^(«CMT\d+»\s*)+$/u;
+          let lastReal = fromSources.length - 1;
+          for (let k = fromSources.length - 1; k >= 0; k--) {
+            if (!CMT_ONLY.test(fromSources[k])) { lastReal = k; break; }
+          }
+          fromSources.forEach((src, sidx) => {
+            if (!src) return;
+            // Pure comment line(s)
+            if (CMT_ONLY.test(src)) {
+              const toks = src.match(/«CMT\d+»/gu) || [];
+              toks.forEach(t => outLines.push(PAD + t));
+              return;
+            }
+            // Pull leading comments off
+            let remaining = src;
+            const leadCmts = [];
+            let lm;
+            while ((lm = remaining.match(/^(«CMT\d+»)\s*/u))) {
+              leadCmts.push(lm[1]);
+              remaining = remaining.slice(lm[0].length);
+            }
+            leadCmts.forEach(t => outLines.push(PAD + t));
+            // Pull trailing comments off
+            const trailCmts = [];
+            const tm = remaining.match(/(\s+«CMT\d+»)+$/u);
+            if (tm) {
+              (tm[0].match(/«CMT\d+»/gu) || []).forEach(t => trailCmts.push(t));
+              remaining = remaining.slice(0, remaining.length - tm[0].length).trim();
+            }
+            if (!remaining.trim()) return;
+            const isLastReal = sidx === lastReal;
+            outLines.push(PAD + remaining + (isLastReal ? '' : ','));
+            trailCmts.forEach(t => outLines.push(PAD + t));
+          });
+        }
         prevWasQueryEnd = true;
 
       } else if (/^(LEFT OUTER JOIN|RIGHT OUTER JOIN|FULL OUTER JOIN|LEFT JOIN|RIGHT JOIN|INNER JOIN|OUTER JOIN|CROSS JOIN|FULL JOIN|JOIN)/.test(tok)) {
@@ -769,7 +870,7 @@ function detectDialect(sql) {
 // comments or string literals.
 function hl(sql) {
   const KW_RE = /\b(SELECT DISTINCT|SELECT|FROM|WHERE|LEFT OUTER JOIN|RIGHT OUTER JOIN|FULL OUTER JOIN|LEFT JOIN|RIGHT JOIN|INNER JOIN|OUTER JOIN|CROSS JOIN|FULL JOIN|JOIN|ON|USING|GROUP BY|ORDER BY|HAVING|QUALIFY|LIMIT|OFFSET|AND|OR|NOT|IN|AS|DISTINCT|WITH OFFSET|WITH|UNION ALL|UNION|INTERSECT|EXCEPT|ALL|EXISTS|BETWEEN|IS NOT NULL|IS NULL|IS|NULL|TRUE|FALSE|ASC|DESC|CASE|WHEN|THEN|ELSE|END|OVER|PARTITION BY|ROWS BETWEEN|RANGE BETWEEN|UNBOUNDED PRECEDING|UNBOUNDED FOLLOWING|CURRENT ROW|PRECEDING|FOLLOWING|NULLS FIRST|NULLS LAST|MERGE|MATCHED|INSERT|UPDATE|DELETE|VALUES|SET|EXTERNAL|STORED|OPTIMIZE|VACUUM|ZORDER|DESCRIBE|HISTORY)\b/g;
-  const FN_RE = /\b(AVG|SUM|COUNT|MIN|MAX|COALESCE|NULLIF|CAST|TRIM|LOWER|UPPER|CONCAT|NOW|ROUND|ABS|LENGTH|DATE_TRUNC|REPLACE|IFF|ZEROIFNULL|UNNEST|FLATTEN|EXPLODE|COLLECT_LIST|ROW_NUMBER|RANK|DENSE_RANK|PERCENT_RANK|CUME_DIST|NTILE|LAG|LEAD|FIRST_VALUE|LAST_VALUE|NTH_VALUE)\b/g;
+  const FN_RE = /\b(AVG|SUM|COUNTIF|COUNT|MIN|MAX|ANY_VALUE|STRING_AGG|ARRAY_AGG|GROUP_CONCAT|APPROX_COUNT_DISTINCT|APPROX_QUANTILES|APPROX_TOP_COUNT|BOOL_AND|BOOL_OR|LOGICAL_AND|LOGICAL_OR|BIT_AND|BIT_OR|BIT_XOR|STDDEV_POP|STDDEV_SAMP|STDDEV|VAR_POP|VAR_SAMP|VARIANCE|PERCENTILE_CONT|PERCENTILE_DISC|ROW_NUMBER|DENSE_RANK|PERCENT_RANK|CUME_DIST|NTILE|RANK|LAG|LEAD|FIRST_VALUE|LAST_VALUE|NTH_VALUE|CONCAT|CHAR_LENGTH|LENGTH|LOWER|UPPER|TRIM|LTRIM|RTRIM|REVERSE|SUBSTRING|SUBSTR|REPLACE|LPAD|RPAD|POSITION|STRPOS|CHARINDEX|STARTS_WITH|ENDS_WITH|CONTAINS_SUBSTR|SPLIT_PART|SPLIT|STRING|TO_HEX|FROM_HEX|FORMAT|REGEXP_EXTRACT_ALL|REGEXP_EXTRACT|REGEXP_REPLACE|REGEXP_CONTAINS|REGEXP_MATCH|INITCAP|LEFT|RIGHT|REPEAT|TRANSLATE|UNNEST|ARRAY_LENGTH|ARRAY_CONCAT|ARRAY_TO_STRING|ARRAY_REVERSE|ARRAY_DISTINCT|ARRAY_INTERSECT|ARRAY_UNION|GENERATE_ARRAY|GENERATE_DATE_ARRAY|GENERATE_TIMESTAMP_ARRAY|ARRAY|ORDINAL|SAFE_OFFSET|SAFE_ORDINAL|DATE_TRUNC|TIMESTAMP_TRUNC|DATETIME_TRUNC|TIME_TRUNC|DATE_ADD|DATE_SUB|DATE_DIFF|TIMESTAMP_ADD|TIMESTAMP_SUB|TIMESTAMP_DIFF|DATETIME_ADD|DATETIME_SUB|DATETIME_DIFF|TIME_ADD|TIME_SUB|TIME_DIFF|EXTRACT|FORMAT_DATE|FORMAT_DATETIME|FORMAT_TIME|FORMAT_TIMESTAMP|PARSE_DATE|PARSE_DATETIME|PARSE_TIME|PARSE_TIMESTAMP|CURRENT_DATE|CURRENT_TIME|CURRENT_DATETIME|CURRENT_TIMESTAMP|DATE_FROM_UNIX_DATE|UNIX_DATE|UNIX_SECONDS|UNIX_MILLIS|UNIX_MICROS|DATETIME|TIMESTAMP|DATE|TIME|LAST_DAY|NOW|GETDATE|SYSDATE|ABS|ROUND|CEILING|CEIL|FLOOR|SIGN|SQRT|POWER|POW|EXP|LOG10|LN|LOG|MOD|DIV|GREATEST|LEAST|TRUNCATE|TRUNC|PI|RANDOM|RAND|ASIN|ACOS|ATAN2|ATAN|SIN|COS|TAN|DEGREES|RADIANS|SAFE_CAST|TRY_CONVERT|TRY_CAST|CONVERT|CAST|COALESCE|IFNULL|NULLIF|NVL2|NVL|IFF|IF|DECODE|ZEROIFNULL|JSON_VALUE|JSON_QUERY|JSON_EXTRACT_SCALAR|JSON_EXTRACT_ARRAY|JSON_EXTRACT|TO_JSON_STRING|TO_JSON|PARSE_JSON|JSON_OBJECT|JSON_ARRAY|JSON_TYPE|OBJECT_CONSTRUCT|FLATTEN|GET_PATH|TRY_PARSE_JSON|EXPLODE|COLLECT_LIST|COLLECT_SET|FARM_FINGERPRINT|GENERATE_UUID|UUID|MD5|SHA512|SHA256|SHA1|HASH)\b/g;
   const NUM_RE = /\b(\d+(?:\.\d+)?)\b/g;
 
   function hlCode(s) {
