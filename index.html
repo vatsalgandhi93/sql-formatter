@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>SQL Dialect Formatter v1.14.0 — EigenZ Solutions LLC</title>
+<title>SQL Dialect Formatter v1.15.0 — EigenZ Solutions LLC</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
 <style>
@@ -210,7 +210,7 @@ footer{padding:14px 24px;border-top:1px solid var(--border);display:flex;align-i
 </main>
 
 <footer>
-  <div class="fcopy">&copy; 2026 EigenZ Solutions LLC. &nbsp;<span style="color:var(--accent);font-family:var(--font-code);font-size:10px">v1.14.0</span> SQL Dialect Formatter by EigenZ Solutions LLC. All rights reserved.</div>
+  <div class="fcopy">&copy; 2026 EigenZ Solutions LLC. &nbsp;<span style="color:var(--accent);font-family:var(--font-code);font-size:10px">v1.15.0</span> SQL Dialect Formatter by EigenZ Solutions LLC. All rights reserved.</div>
   <div class="flinks">
     <a href="#">Documentation</a>
     <a href="#">VS Code Extension</a>
@@ -795,9 +795,46 @@ function formatSQL(raw, indentSize, commaPos) {
       } else if (/^(WHERE|HAVING|QUALIFY)/.test(tok)) {
         const m = tok.match(/^(WHERE|HAVING|QUALIFY)\s*/);
         outLines.push(m[1]);
+        const CMT_ONLY = /^(«CMT\d+»\s*)+$/u;
         splitByAndOrDepth0(tok.slice(m[0].length)).forEach(cond => {
-          if (!cond.trim()) return;
-          outLines.push(renderExpr(cond.trim(), PAD, indentSize, commaPos));
+          cond = cond.trim();
+          if (!cond) return;
+
+          // Pure comment-only condition (entire line was a comment between conds)
+          if (CMT_ONLY.test(cond)) {
+            (cond.match(/«CMT\d+»/gu) || []).forEach(t => outLines.push(PAD + t));
+            return;
+          }
+
+          // Pull leading comment placeholders off (they came from their own lines)
+          let remaining = cond;
+          const leadCmts = [];
+          let lm;
+          while ((lm = remaining.match(/^(«CMT\d+»)\s*/u))) {
+            leadCmts.push(lm[1]);
+            remaining = remaining.slice(lm[0].length);
+          }
+          leadCmts.forEach(t => outLines.push(PAD + t));
+
+          if (!remaining.trim()) return;
+
+          // Pull trailing comment placeholders off — every trailing one was on
+          // its own line in the original SQL (--ANDs / commented-out conditions)
+          const trailCmts = [];
+          const tm = remaining.match(/(\s+«CMT\d+»)+$/u);
+          if (tm) {
+            (tm[0].match(/«CMT\d+»/gu) || []).forEach(t => trailCmts.push(t));
+            remaining = remaining.slice(0, remaining.length - tm[0].length).trim();
+          }
+
+          if (!remaining.trim()) {
+            // Edge: condition collapsed to only comments
+            trailCmts.forEach(t => outLines.push(PAD + t));
+            return;
+          }
+
+          outLines.push(renderExpr(remaining, PAD, indentSize, commaPos));
+          trailCmts.forEach(t => outLines.push(PAD + t));
         });
 
       } else if (/^(GROUP BY|ORDER BY)/.test(tok)) {
