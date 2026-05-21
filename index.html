@@ -168,7 +168,7 @@ header {
 .theme-icon { font-size: 13px; }
 
 /* ── Main ─────────────────────────────────────────────────────────── */
-main { flex: 1; padding: 20px 28px 0; display: flex; flex-direction: column; gap: 14px; }
+main { flex: 1; padding: 20px 28px 12px; display: flex; flex-direction: column; gap: 14px; min-height: 0; }
 
 /* ── Toolbar ──────────────────────────────────────────────────────── */
 .toolbar {
@@ -236,7 +236,8 @@ select:hover, select:focus { border-color: var(--accent); }
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 14px;
-  height: 420px;
+  flex: 1;
+  min-height: 0;
 }
 .panel {
   display: flex;
@@ -404,7 +405,7 @@ footer {
   header { padding: 0 16px; }
   main { padding: 16px 16px 0; }
   .editor-grid { grid-template-columns: 1fr; height: auto; }
-  .panel { height: 280px; }
+  .panel { height: 320px; }
   footer { padding: 16px; }
 }
 </style>
@@ -517,12 +518,12 @@ footer {
 <script>
 'use strict';
 
-// ── Helpers (unchanged) ───────────────────────────────────────────────────────
+// ── Helpers ───────────────────────────────────────────────────────────────────
 
 function upcase(s) {
   const KWS = [
     'SELECT','FROM','LEFT JOIN','RIGHT JOIN','INNER JOIN','OUTER JOIN','JOIN',
-    'ON','GROUP BY','ORDER BY','HAVING','LIMIT','WHERE','AND','OR',
+    'ON','USING','GROUP BY','ORDER BY','HAVING','LIMIT','WHERE','AND','OR',
     'NOT IN','IN','AS','DISTINCT','WITH','UNION ALL','UNION',
     'EXISTS','BETWEEN','IS NOT NULL','IS NULL','TRUE','FALSE',
     'ASC','DESC','CASE','WHEN','THEN','ELSE','END',
@@ -537,77 +538,89 @@ function upcase(s) {
 function splitByCommaDepth0(s) {
   const parts = []; let depth = 0, cur = '';
   for (const ch of s) {
-    if (ch==='('){depth++;cur+=ch;}
-    else if(ch===')'){depth--;cur+=ch;}
-    else if(ch===','&&depth===0){parts.push(cur);cur='';}
-    else cur+=ch;
+    if      (ch==='(')               { depth++; cur+=ch; }
+    else if (ch===')')               { depth--; cur+=ch; }
+    else if (ch===',' && depth===0)  { parts.push(cur); cur=''; }
+    else                             { cur+=ch; }
   }
   if (cur.trim()) parts.push(cur);
   return parts;
 }
 
 function splitByAndOrDepth0(s) {
-  const parts=[]; let depth=0,cur='',i=0;
-  while(i<s.length){
-    if(s[i]==='('){depth++;cur+=s[i++];continue;}
-    if(s[i]===')'){depth--;cur+=s[i++];continue;}
-    if(depth===0){
-      const m=s.slice(i).match(/^(AND|OR)\b/i);
-      if(m){parts.push(cur.trim());cur=m[1].toUpperCase()+' ';i+=m[0].length;if(s[i]===' ')i++;continue;}
+  const parts=[]; let depth=0, cur='', i=0;
+  while (i<s.length) {
+    if      (s[i]==='(') { depth++; cur+=s[i++]; continue; }
+    else if (s[i]===')') { depth--; cur+=s[i++]; continue; }
+    if (depth===0) {
+      const m = s.slice(i).match(/^(AND|OR)\b/i);
+      if (m) {
+        parts.push(cur.trim());
+        cur = m[1].toUpperCase()+' ';
+        i += m[0].length;
+        if (s[i]===' ') i++;
+        continue;
+      }
     }
     cur+=s[i++];
   }
-  if(cur.trim())parts.push(cur.trim());
+  if (cur.trim()) parts.push(cur.trim());
   return parts;
 }
 
 function splitIntoClauses(s) {
-  let depth=0,segs=[],cur='',i=0;
-  while(i<s.length){
-    if(s[i]==='('){depth++;cur+=s[i++];continue;}
-    if(s[i]===')'){depth--;cur+=s[i++];continue;}
-    if(depth===0){
-      const m=s.slice(i).match(/^(SELECT|FROM|LEFT\s+JOIN|RIGHT\s+JOIN|INNER\s+JOIN|OUTER\s+JOIN|JOIN|WHERE|GROUP\s+BY|ORDER\s+BY|HAVING|LIMIT)\b/i);
-      if(m){if(cur.trim())segs.push(cur.trim());cur=m[0].replace(/\s+/g,' ').toUpperCase();i+=m[0].length;continue;}
+  let depth=0, segs=[], cur='', i=0;
+  while (i<s.length) {
+    if      (s[i]==='(') { depth++; cur+=s[i++]; continue; }
+    else if (s[i]===')') { depth--; cur+=s[i++]; continue; }
+    if (depth===0) {
+      const m = s.slice(i).match(
+        /^(SELECT|FROM|LEFT\s+JOIN|RIGHT\s+JOIN|INNER\s+JOIN|OUTER\s+JOIN|JOIN|WHERE|GROUP\s+BY|ORDER\s+BY|HAVING|LIMIT)\b/i
+      );
+      if (m) {
+        if (cur.trim()) segs.push(cur.trim());
+        cur = m[0].replace(/\s+/g,' ').toUpperCase();
+        i += m[0].length;
+        continue;
+      }
     }
     cur+=s[i++];
   }
-  if(cur.trim())segs.push(cur.trim());
+  if (cur.trim()) segs.push(cur.trim());
   return segs;
 }
 
-// Find matching close paren, return index just past it
 function findCloseParen(s, openIdx) {
   let depth=1, j=openIdx+1;
-  while(j<s.length&&depth>0){
-    if(s[j]==='(')depth++;
-    else if(s[j]===')')depth--;
+  while (j<s.length && depth>0) {
+    if      (s[j]==='(') depth++;
+    else if (s[j]===')') depth--;
     j++;
   }
-  return j; // index after ')'
+  return j;
 }
 
-// Render subquery/CTE body aligned to one column after the opening paren
+// Render subquery bracket-aligned to the column after its opening paren
 function renderSubquery(prefixBeforeParen, subSQL, indentSize, commaPos) {
   const col       = prefixBeforeParen.length;
-  const subIndent = ' '.repeat(col + 1);
+  const subIndent = ' '.repeat(col+1);
   const closePad  = ' '.repeat(col);
   const { formatted } = formatSQL(subSQL.trim(), indentSize, commaPos);
-  const body = formatted.split('\n').map(l => subIndent + l).join('\n');
+  const body = formatted.split('\n').map(l => subIndent+l).join('\n');
   return prefixBeforeParen + '(\n' + body + '\n' + closePad + ')';
 }
 
-// Render one expression; expand any contained subquery
+// Render one expression, expanding any contained subquery bracket-aligned
 function renderExpr(expr, linePrefix, indentSize, commaPos) {
   let i=0;
-  while(i<expr.length){
-    if(expr[i]==='('){
-      const j = findCloseParen(expr, i);
+  while (i<expr.length) {
+    if (expr[i]==='(') {
+      const j     = findCloseParen(expr, i);
       const inner = expr.slice(i+1, j-1).trim();
-      if(/^SELECT\b/i.test(inner)){
+      if (/^SELECT\b/i.test(inner)) {
         const before = expr.slice(0,i);
         const after  = expr.slice(j);
-        return renderSubquery(linePrefix+before, inner, indentSize, commaPos) + after;
+        return renderSubquery(linePrefix+before, inner, indentSize, commaPos)+after;
       }
       i=j; continue;
     }
@@ -616,48 +629,27 @@ function renderExpr(expr, linePrefix, indentSize, commaPos) {
   return linePrefix+expr;
 }
 
-// ── NEW: CTE renderer ─────────────────────────────────────────────────────────
-// Input:  "WITH cte1 AS (...), cte2 AS (...)"  (already upcased)
-// Output: formatted WITH block, one CTE per section, bracket-aligned bodies
-
+// Render WITH block with bracket-aligned CTE bodies
 function renderWithClause(withBody, indentSize, commaPos) {
-  // withBody is everything after "WITH "
-  // Split into individual CTEs by comma at depth 0
   const cteParts = splitByCommaDepth0(withBody);
-  const lines = ['WITH'];
-
+  const lines    = ['WITH'];
   cteParts.forEach((part, idx) => {
     part = part.trim();
-    const isLast = idx === cteParts.length - 1;
-
-    // Match:  cte_name AS (...)
+    const isLast = idx === cteParts.length-1;
     const m = part.match(/^(\w+)\s+AS\s*\(/i);
-    if (!m) {
-      // Fallback — just push as-is
-      lines.push('  ' + part + (isLast ? '' : ','));
-      return;
-    }
-
-    const cteName   = m[1];
-    const parenStart = part.indexOf('(', m[0].length - 1);
-    const parenEnd   = findCloseParen(part, parenStart); // index after ')'
-    const innerSQL   = part.slice(parenStart + 1, parenEnd - 1).trim();
-
-    // The prefix on this line: "  cte_name AS "
-    // (2 spaces indent under WITH)
-    const linePrefix = '  ' + cteName + ' AS ';
-
+    if (!m) { lines.push('  '+part+(isLast?'':',')); return; }
+    const cteName    = m[1];
+    const parenStart = part.indexOf('(', m[0].length-1);
+    const parenEnd   = findCloseParen(part, parenStart);
+    const innerSQL   = part.slice(parenStart+1, parenEnd-1).trim();
+    const linePrefix = '  '+cteName+' AS ';
     const { formatted } = formatSQL(innerSQL, indentSize, commaPos);
-    const col       = linePrefix.length;          // column of the '('
-    const subIndent = ' '.repeat(col + 1);
+    const col       = linePrefix.length;
+    const subIndent = ' '.repeat(col+1);
     const closePad  = ' '.repeat(col);
-
-    const body = formatted.split('\n').map(l => subIndent + l).join('\n');
-    const block = linePrefix + '(\n' + body + '\n' + closePad + ')' + (isLast ? '' : ',');
-
-    lines.push(block);
+    const body = formatted.split('\n').map(l => subIndent+l).join('\n');
+    lines.push(linePrefix+'(\n'+body+'\n'+closePad+')'+(isLast?'':','));
   });
-
   return lines.join('\n');
 }
 
@@ -667,47 +659,61 @@ function formatSQL(raw, indentSize, commaPos) {
   try {
     const PAD = ' '.repeat(indentSize);
 
-    let s = upcase(raw);
+    // 1. Normalise line endings
+    let s = raw.replace(/\r\n/g,'\n').replace(/\r/g,'\n');
+
+    // 2. Protect single-line comments FIRST — before any keyword processing.
+    //    This makes keywords inside comments invisible to the rest of the pipeline.
+    const comments = [];
+    s = s.replace(/--[^\n]*/g, m => {
+      comments.push(m);
+      return `\xABCMT${comments.length-1}\xBB`;   // «CMTn»
+    });
+
+    // 3. Collapse to a single line (comment placeholders are opaque now)
     s = s.replace(/\s+/g,' ').trim();
+
+    // 4. Peel off any leading comment placeholders so they don't block
+    //    WITH / SELECT detection. Output each on its own line at the end.
+    const headerComments = [];
+    let leadMatch;
+    while ((leadMatch = s.match(/^\xABCMT(\d+)\xBB\s*/))) {
+      headerComments.push(`\xABCMT${leadMatch[1]}\xBB`);
+      s = s.slice(leadMatch[0].length);
+    }
+
+    // 5. Uppercase keywords
+    s = upcase(s);
+
+    // 6. Space around operators (=, <, >, !, <=, >=, <>)
     s = s.replace(/\s*([=<>!]+)\s*/g,' $1 ').replace(/\s{2,}/g,' ');
 
-    // Protect string literals
+    // 7. Protect string literals
     const strings = [];
-    s = s.replace(/'[^']*'/g, m => { strings.push(m); return `§${strings.length-1}§`; });
+    s = s.replace(/'[^']*'/g, m => { strings.push(m); return `\xA7${strings.length-1}\xA7`; });
 
     const outLines = [];
 
-    // ── Handle leading WITH clause ────────────────────────────────────────────
-    // Strip it off before clause-splitting (it contains commas at depth 0
-    // that would confuse splitByCommaDepth0 in SELECT)
+    // 8. Handle leading WITH clause
     let mainSQL = s;
     if (/^WITH\b/i.test(s)) {
-      // Find where the WITH block ends and the main SELECT begins
-      // Walk past all CTE parens at depth 0
-      let i = 5; // past "WITH "
-      let depth = 0;
-      let withEnd = i;
-      while (i < s.length) {
-        if (s[i]==='(') depth++;
+      let i=5, depth=0, withEnd=i;
+      while (i<s.length) {
+        if      (s[i]==='(') { depth++; }
         else if (s[i]===')') { depth--; if (depth===0) withEnd=i+1; }
-        else if (s[i]===',' && depth===0) { /* CTE separator, keep going */ }
         else if (depth===0) {
-          // Check if we've hit SELECT / FROM etc. outside any paren
           const m = s.slice(i).match(/^(SELECT|FROM|INSERT|UPDATE|DELETE)\b/i);
-          if (m) { withEnd = i; break; }
+          if (m) { withEnd=i; break; }
         }
         i++;
       }
-      const withPart = s.slice(5, withEnd).trim();  // body after "WITH "
+      const withPart = s.slice(5, withEnd).trim();
       mainSQL        = s.slice(withEnd).trim();
-
-      const withBlock = renderWithClause(withPart, indentSize, commaPos);
-      outLines.push(withBlock);
+      outLines.push(renderWithClause(withPart, indentSize, commaPos));
     }
 
-    // ── Main query ────────────────────────────────────────────────────────────
+    // 9. Split and render main query clauses
     const clauses = splitIntoClauses(mainSQL);
-
     clauses.forEach(tok => {
       tok = tok.trim();
       if (!tok) return;
@@ -717,22 +723,26 @@ function formatSQL(raw, indentSize, commaPos) {
         const cols = splitByCommaDepth0(tok.replace(/^SELECT\s*/,''));
         cols.forEach((col, idx) => {
           col = col.trim();
-          const isLast = idx === cols.length-1;
+          const isLast = idx===cols.length-1;
           outLines.push(commaPos==='after'
-            ? PAD + col + (isLast ? '' : ',')
-            : PAD + (idx===0 ? '  ' : ', ') + col);
+            ? PAD+col+(isLast?'':',')
+            : PAD+(idx===0?'  ':' ,')+col);
         });
 
       } else if (/^FROM/.test(tok)) {
         outLines.push(tok);
 
       } else if (/^(LEFT JOIN|RIGHT JOIN|INNER JOIN|OUTER JOIN|JOIN)/.test(tok)) {
-        const m    = tok.match(/^(LEFT JOIN|RIGHT JOIN|INNER JOIN|OUTER JOIN|JOIN)\s*/);
-        const rest = tok.slice(m[0].length);
-        const onIdx = rest.search(/\bON\b/);
+        const m      = tok.match(/^(LEFT JOIN|RIGHT JOIN|INNER JOIN|OUTER JOIN|JOIN)\s*/);
+        const rest   = tok.slice(m[0].length);
+        const onIdx  = rest.search(/\bON\b/);
+        const usIdx  = rest.search(/\bUSING\b/);
         if (onIdx > -1) {
           outLines.push(m[1]+' '+rest.slice(0,onIdx).trim());
           outLines.push(PAD+'ON '+rest.slice(onIdx+2).trim());
+        } else if (usIdx > -1) {
+          outLines.push(m[1]+' '+rest.slice(0,usIdx).trim());
+          outLines.push(PAD+'USING '+rest.slice(usIdx+5).trim());
         } else {
           outLines.push(tok);
         }
@@ -746,25 +756,31 @@ function formatSQL(raw, indentSize, commaPos) {
         });
 
       } else if (/^(GROUP BY|ORDER BY)/.test(tok)) {
-        const m    = tok.match(/^(GROUP BY|ORDER BY)\s*/);
-        const cols = splitByCommaDepth0(tok.slice(m[0].length));
+        const m = tok.match(/^(GROUP BY|ORDER BY)\s*/);
         outLines.push(m[1]);
-        cols.forEach((col, idx) => {
+        splitByCommaDepth0(tok.slice(m[0].length)).forEach((col, idx, arr) => {
           col = col.trim();
-          const isLast = idx===cols.length-1;
+          const isLast = idx===arr.length-1;
           outLines.push(commaPos==='after'
-            ? PAD + col + (isLast ? '' : ',')
-            : PAD + (idx===0 ? '  ' : ', ') + col);
+            ? PAD+col+(isLast?'':',')
+            : PAD+(idx===0?'  ':' ,')+col);
         });
 
       } else {
+        // Unknown token (inline comment placeholder, LIMIT, etc.)
         outLines.push(tok);
       }
     });
 
-    let result = outLines.join('\n');
-    strings.forEach((str,i) => {
-      result = result.replace(new RegExp(`§${i}§`,'g'), str);
+    // 10. Restore: strings first, then comments
+    let result = (headerComments.length ? headerComments.join('\n')+'\n' : '')
+               + outLines.join('\n');
+
+    strings.forEach((str, i) => {
+      result = result.replace(new RegExp(`\xA7${i}\xA7`,'g'), str);
+    });
+    comments.forEach((cmt, i) => {
+      result = result.replace(`\xABCMT${i}\xBB`, cmt);
     });
 
     return { formatted: result, error: null };
@@ -773,8 +789,6 @@ function formatSQL(raw, indentSize, commaPos) {
     return { formatted: raw, error: err.message };
   }
 }
-
-
 
 function detectDialect(sql) {
   if (/distribution\s*=\s*(hash|round_robin|replicate)/i.test(sql) ||
