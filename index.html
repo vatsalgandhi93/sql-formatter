@@ -1,0 +1,914 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SQL Dialect Formatter — EigenZ Solutions LLC</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+*,*::before,*::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+/* ── Brand tokens ─────────────────────────────────────────────────── */
+:root {
+  /* chart palette */
+  --c-sand:    #E5DDCD;
+  --c-gold:    #B4A139;
+  --c-orange:  #F06B2C;
+  --c-violet:  #757AF1;
+  --c-espresso:#201511;
+
+  /* website palette */
+  --c-cream:   #FBF7EF;
+  --c-linen:   #F7EEE0;
+  --c-sage:    #777869;
+  --c-bark:    #2F241B;
+  --c-soil:    #231B18;
+
+  --font-ui:   'Poppins', sans-serif;
+  --font-code: 'JetBrains Mono', monospace;
+  --radius:    10px;
+  --radius-sm: 6px;
+  --shadow:    0 1px 3px rgba(35,27,24,.08), 0 4px 16px rgba(35,27,24,.06);
+}
+
+/* ── Light theme (default) ────────────────────────────────────────── */
+[data-theme="light"] {
+  --bg:          #FBF7EF;
+  --bg-panel:    #F7EEE0;
+  --bg-header:   #F0E8D6;
+  --bg-input:    #FDFAF5;
+  --border:      rgba(47,36,27,.14);
+  --border-md:   rgba(47,36,27,.22);
+  --text-primary:   #2F241B;
+  --text-secondary: #5a5244;
+  --text-muted:     #777869;
+  --accent:      #B4A139;
+  --accent-hover:#9e8d30;
+  --accent-text: #FDFAF5;
+  --tag-ok-bg:   #eef6e6;
+  --tag-ok-fg:   #4a7c2a;
+  --tag-err-bg:  #fdf0e8;
+  --tag-err-fg:  #c0451a;
+  --tag-wait-bg: #f0ede6;
+  --tag-wait-fg: #777869;
+  --kw:   #5256c8;
+  --fn:   #8a7b20;
+  --str:  #c05520;
+  --num:  #9e3a6e;
+  --cmt:  #8f8a7e;
+  --scrollbar: rgba(47,36,27,.15);
+}
+
+/* ── Dark theme ───────────────────────────────────────────────────── */
+[data-theme="dark"] {
+  --bg:          #201511;
+  --bg-panel:    #2a1c16;
+  --bg-header:   #251a13;
+  --bg-input:    #1a0f0a;
+  --border:      rgba(229,221,205,.10);
+  --border-md:   rgba(229,221,205,.18);
+  --text-primary:   #EDE5D8;
+  --text-secondary: #c4b89e;
+  --text-muted:     #8a7e6e;
+  --accent:      #B4A139;
+  --accent-hover:#cdb840;
+  --accent-text: #1a1208;
+  --tag-ok-bg:   rgba(100,140,60,.18);
+  --tag-ok-fg:   #a3d46e;
+  --tag-err-bg:  rgba(240,107,44,.14);
+  --tag-err-fg:  #f09060;
+  --tag-wait-bg: rgba(229,221,205,.08);
+  --tag-wait-fg: #8a7e6e;
+  --kw:   #9198f5;
+  --fn:   #c9b93a;
+  --str:  #f08050;
+  --num:  #d87ab0;
+  --cmt:  #6e6658;
+  --scrollbar: rgba(229,221,205,.12);
+}
+
+/* ── Base ─────────────────────────────────────────────────────────── */
+body {
+  font-family: var(--font-ui);
+  background: var(--bg);
+  color: var(--text-primary);
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  transition: background .25s, color .25s;
+}
+
+/* ── Header ───────────────────────────────────────────────────────── */
+header {
+  background: var(--bg-header);
+  border-bottom: 1px solid var(--border);
+  padding: 0 28px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: 58px;
+  flex-shrink: 0;
+}
+.brand {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+}
+.brand-name {
+  font-size: 17px;
+  font-weight: 700;
+  color: var(--text-primary);
+  letter-spacing: -.02em;
+}
+.brand-name span { color: var(--accent); }
+.brand-by {
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--text-muted);
+  letter-spacing: .03em;
+  text-transform: uppercase;
+}
+.header-right { display: flex; align-items: center; gap: 10px; }
+.dialect-pill {
+  font-size: 11px;
+  font-weight: 500;
+  padding: 3px 10px;
+  border-radius: 99px;
+  background: rgba(117,122,241,.12);
+  color: var(--c-violet);
+  border: 1px solid rgba(117,122,241,.25);
+  font-family: var(--font-code);
+  display: none;
+}
+
+/* ── Theme toggle ─────────────────────────────────────────────────── */
+.theme-toggle {
+  width: 44px;
+  height: 24px;
+  background: var(--border-md);
+  border-radius: 99px;
+  border: none;
+  cursor: pointer;
+  position: relative;
+  transition: background .2s;
+  flex-shrink: 0;
+}
+.theme-toggle::after {
+  content: '';
+  position: absolute;
+  top: 3px; left: 3px;
+  width: 18px; height: 18px;
+  border-radius: 50%;
+  background: var(--accent);
+  transition: transform .2s, background .2s;
+  box-shadow: 0 1px 4px rgba(0,0,0,.2);
+}
+[data-theme="dark"] .theme-toggle::after { transform: translateX(20px); }
+.theme-icon { font-size: 13px; }
+
+/* ── Main ─────────────────────────────────────────────────────────── */
+main { flex: 1; padding: 20px 28px 0; display: flex; flex-direction: column; gap: 14px; }
+
+/* ── Toolbar ──────────────────────────────────────────────────────── */
+.toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+.toolbar label {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: .07em;
+}
+select {
+  font-family: var(--font-ui);
+  font-size: 13px;
+  font-weight: 500;
+  background: var(--bg-panel);
+  color: var(--text-primary);
+  border: 1px solid var(--border-md);
+  border-radius: var(--radius-sm);
+  padding: 6px 10px;
+  cursor: pointer;
+  outline: none;
+  transition: border-color .15s;
+  -webkit-appearance: none;
+  appearance: none;
+  padding-right: 24px;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M0 0l5 6 5-6z' fill='%23777869'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 8px center;
+}
+select:hover, select:focus { border-color: var(--accent); }
+.sep { width: 1px; height: 22px; background: var(--border); }
+.btn {
+  font-family: var(--font-ui);
+  font-size: 13px;
+  font-weight: 600;
+  border-radius: var(--radius-sm);
+  padding: 7px 16px;
+  cursor: pointer;
+  border: 1px solid transparent;
+  transition: all .15s;
+  outline: none;
+}
+.btn-primary {
+  background: var(--accent);
+  color: var(--accent-text);
+  border-color: var(--accent);
+  letter-spacing: .01em;
+}
+.btn-primary:hover { background: var(--accent-hover); border-color: var(--accent-hover); transform: translateY(-1px); box-shadow: 0 2px 8px rgba(180,161,57,.3); }
+.btn-primary:active { transform: none; box-shadow: none; }
+.btn-ghost {
+  background: transparent;
+  color: var(--text-muted);
+  border-color: var(--border-md);
+}
+.btn-ghost:hover { color: var(--text-primary); border-color: var(--border-md); background: var(--bg-panel); }
+
+/* ── Editor grid ──────────────────────────────────────────────────── */
+.editor-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 14px;
+  height: 420px;
+}
+.panel {
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  overflow: hidden;
+  background: var(--bg-panel);
+  box-shadow: var(--shadow);
+  transition: background .25s, border-color .25s;
+}
+.panel-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 14px;
+  background: var(--bg-header);
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+.panel-label {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: .08em;
+}
+.badge {
+  font-size: 10px;
+  font-weight: 600;
+  font-family: var(--font-code);
+  padding: 2px 9px;
+  border-radius: 99px;
+  border: 1px solid;
+  letter-spacing: .03em;
+}
+.b-raw  { background: var(--tag-err-bg); color: var(--tag-err-fg); border-color: currentColor; opacity: .7; }
+.b-ok   { background: var(--tag-ok-bg);  color: var(--tag-ok-fg);  border-color: currentColor; }
+.b-wait { background: var(--tag-wait-bg);color: var(--tag-wait-fg);border-color: currentColor; }
+textarea {
+  flex: 1;
+  width: 100%;
+  background: var(--bg-input);
+  border: none;
+  outline: none;
+  resize: none;
+  font-family: var(--font-code);
+  font-size: 12.5px;
+  line-height: 1.7;
+  color: var(--text-primary);
+  padding: 14px;
+  caret-color: var(--accent);
+  transition: background .25s, color .25s;
+}
+textarea::placeholder { color: var(--text-muted); opacity: .6; }
+#out {
+  flex: 1;
+  overflow: auto;
+  padding: 14px;
+  font-family: var(--font-code);
+  font-size: 12.5px;
+  line-height: 1.7;
+  white-space: pre;
+  color: var(--text-muted);
+  font-style: italic;
+  background: var(--bg-input);
+  transition: background .25s;
+  scrollbar-width: thin;
+  scrollbar-color: var(--scrollbar) transparent;
+}
+#out.ready { color: var(--text-primary); font-style: normal; }
+
+/* Syntax highlight */
+.kw  { color: var(--kw); font-weight: 600; }
+.fn  { color: var(--fn); }
+.str { color: var(--str); }
+.num { color: var(--num); }
+.cmt { color: var(--cmt); font-style: italic; }
+
+.copy-btn {
+  font-family: var(--font-ui);
+  font-size: 11px;
+  font-weight: 500;
+  background: transparent;
+  border: 1px solid var(--border-md);
+  color: var(--text-muted);
+  border-radius: var(--radius-sm);
+  padding: 2px 9px;
+  cursor: pointer;
+  transition: all .15s;
+}
+.copy-btn:hover { border-color: var(--accent); color: var(--accent); }
+
+/* ── Stats ────────────────────────────────────────────────────────── */
+.stats { display: flex; gap: 10px; flex-wrap: wrap; }
+.stat {
+  background: var(--bg-panel);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 12px 16px;
+  flex: 1;
+  min-width: 110px;
+  box-shadow: var(--shadow);
+  transition: background .25s;
+}
+.stat-n {
+  font-size: 22px;
+  font-weight: 700;
+  color: var(--accent);
+  font-family: var(--font-code);
+  line-height: 1.2;
+}
+.stat-l {
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--text-muted);
+  margin-top: 3px;
+  text-transform: uppercase;
+  letter-spacing: .07em;
+}
+
+/* ── Error ────────────────────────────────────────────────────────── */
+.err-box {
+  padding: 10px 14px;
+  border-radius: var(--radius-sm);
+  background: var(--tag-err-bg);
+  border: 1px solid var(--tag-err-fg);
+  color: var(--tag-err-fg);
+  font-family: var(--font-code);
+  font-size: 12px;
+  display: none;
+}
+
+/* ── Footer ───────────────────────────────────────────────────────── */
+footer {
+  margin-top: 28px;
+  padding: 18px 28px;
+  border-top: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.footer-copy {
+  font-size: 11px;
+  color: var(--text-muted);
+  font-weight: 400;
+}
+.footer-copy b { color: var(--text-secondary); font-weight: 600; }
+.footer-links {
+  display: flex;
+  gap: 16px;
+}
+.footer-links a {
+  font-size: 11px;
+  color: var(--text-muted);
+  text-decoration: none;
+  font-weight: 500;
+  transition: color .15s;
+}
+.footer-links a:hover { color: var(--accent); }
+
+@media (max-width: 680px) {
+  header { padding: 0 16px; }
+  main { padding: 16px 16px 0; }
+  .editor-grid { grid-template-columns: 1fr; height: auto; }
+  .panel { height: 280px; }
+  footer { padding: 16px; }
+}
+</style>
+</head>
+<body>
+
+<!-- Header -->
+<header>
+  <div class="brand">
+    <div class="brand-name">SQL Dialect Formatter <span>·</span></div>
+    <div class="brand-by">by EigenZ Solutions</div>
+  </div>
+  <div class="header-right">
+    <div class="dialect-pill" id="dialect-pill"></div>
+    <span class="theme-icon" id="theme-icon">☀️</span>
+    <button class="theme-toggle" id="theme-btn" onclick="toggleTheme()" aria-label="Toggle dark/light mode"></button>
+    <span class="theme-icon" id="theme-icon-right">🌙</span>
+  </div>
+</header>
+
+<!-- Main -->
+<main>
+
+  <!-- Toolbar -->
+  <div class="toolbar">
+    <label>Dialect</label>
+    <select id="dialect">
+      <option value="auto">Auto-detect</option>
+      <optgroup label="Cloud Warehouses">
+        <option value="Azure Synapse">Azure Synapse</option>
+        <option value="Amazon Redshift">Amazon Redshift</option>
+        <option value="AWS Athena">AWS Athena</option>
+        <option value="Databricks">Databricks</option>
+        <option value="BigQuery">BigQuery</option>
+        <option value="Snowflake">Snowflake</option>
+      </optgroup>
+      <optgroup label="Traditional">
+        <option value="PostgreSQL" selected>PostgreSQL</option>
+        <option value="MySQL">MySQL</option>
+        <option value="SQL Server">SQL Server / T-SQL</option>
+        <option value="Spark SQL">Spark SQL</option>
+        <option value="Generic SQL">Generic SQL</option>
+      </optgroup>
+    </select>
+    <div class="sep"></div>
+    <label>Commas</label>
+    <select id="commas">
+      <option value="after">Trailing  col,</option>
+      <option value="before">Leading  ,col</option>
+    </select>
+    <div class="sep"></div>
+    <label>Indent</label>
+    <select id="indent">
+      <option value="2" selected>2 spaces</option>
+      <option value="4">4 spaces</option>
+      <option value="6">6 spaces</option>
+    </select>
+    <div class="sep"></div>
+    <button class="btn btn-primary" onclick="doFormat()">Format SQL</button>
+    <button class="btn btn-ghost" onclick="loadSample()">Load sample</button>
+    <button class="btn btn-ghost" onclick="clearAll()">Clear</button>
+  </div>
+
+  <!-- Editor -->
+  <div class="editor-grid">
+    <div class="panel">
+      <div class="panel-head">
+        <span class="panel-label">Input SQL</span>
+        <span class="badge b-raw">Unformatted</span>
+      </div>
+      <textarea id="inp" spellcheck="false" placeholder="Paste your SQL here — any dialect, any mess…"></textarea>
+    </div>
+    <div class="panel">
+      <div class="panel-head">
+        <span class="panel-label">Formatted output</span>
+        <div style="display:flex;gap:7px;align-items:center;">
+          <button class="copy-btn" onclick="copyOut()">Copy</button>
+          <span class="badge b-wait" id="badge">Waiting</span>
+        </div>
+      </div>
+      <div id="out">Click "Format SQL" to see the result…</div>
+    </div>
+  </div>
+
+  <!-- Error -->
+  <div class="err-box" id="err-box"></div>
+
+  <!-- Stats -->
+  <div class="stats" id="stats" style="display:none;">
+    <div class="stat"><div class="stat-n" id="sb">—</div><div class="stat-l">Lines before</div></div>
+    <div class="stat"><div class="stat-n" id="sa">—</div><div class="stat-l">Lines after</div></div>
+    <div class="stat"><div class="stat-n" id="sc">—</div><div class="stat-l">Clauses</div></div>
+    <div class="stat"><div class="stat-n" id="sq">—</div><div class="stat-l">Subqueries / CTEs</div></div>
+  </div>
+
+</main>
+
+<!-- Footer -->
+<footer>
+  <div class="footer-copy">
+    &copy; 2026 EigenZ Solutions LLC. SQL Dialect Formatter by EigenZ Solutions LLC. All rights reserved.
+  </div>
+  <div class="footer-links">
+    <a href="#">Documentation</a>
+    <a href="#">VS Code Extension</a>
+    <a href="#">GitHub</a>
+  </div>
+</footer>
+
+<script>
+'use strict';
+
+// ── Helpers (unchanged) ───────────────────────────────────────────────────────
+
+function upcase(s) {
+  const KWS = [
+    'SELECT','FROM','LEFT JOIN','RIGHT JOIN','INNER JOIN','OUTER JOIN','JOIN',
+    'ON','GROUP BY','ORDER BY','HAVING','LIMIT','WHERE','AND','OR',
+    'NOT IN','IN','AS','DISTINCT','WITH','UNION ALL','UNION',
+    'EXISTS','BETWEEN','IS NOT NULL','IS NULL','TRUE','FALSE',
+    'ASC','DESC','CASE','WHEN','THEN','ELSE','END',
+    'AVG','SUM','COUNT','MIN','MAX'
+  ];
+  KWS.forEach(kw => {
+    s = s.replace(new RegExp('\\b' + kw.replace(/ /g,'\\s+') + '\\b','gi'), kw);
+  });
+  return s;
+}
+
+function splitByCommaDepth0(s) {
+  const parts = []; let depth = 0, cur = '';
+  for (const ch of s) {
+    if (ch==='('){depth++;cur+=ch;}
+    else if(ch===')'){depth--;cur+=ch;}
+    else if(ch===','&&depth===0){parts.push(cur);cur='';}
+    else cur+=ch;
+  }
+  if (cur.trim()) parts.push(cur);
+  return parts;
+}
+
+function splitByAndOrDepth0(s) {
+  const parts=[]; let depth=0,cur='',i=0;
+  while(i<s.length){
+    if(s[i]==='('){depth++;cur+=s[i++];continue;}
+    if(s[i]===')'){depth--;cur+=s[i++];continue;}
+    if(depth===0){
+      const m=s.slice(i).match(/^(AND|OR)\b/i);
+      if(m){parts.push(cur.trim());cur=m[1].toUpperCase()+' ';i+=m[0].length;if(s[i]===' ')i++;continue;}
+    }
+    cur+=s[i++];
+  }
+  if(cur.trim())parts.push(cur.trim());
+  return parts;
+}
+
+function splitIntoClauses(s) {
+  let depth=0,segs=[],cur='',i=0;
+  while(i<s.length){
+    if(s[i]==='('){depth++;cur+=s[i++];continue;}
+    if(s[i]===')'){depth--;cur+=s[i++];continue;}
+    if(depth===0){
+      const m=s.slice(i).match(/^(SELECT|FROM|LEFT\s+JOIN|RIGHT\s+JOIN|INNER\s+JOIN|OUTER\s+JOIN|JOIN|WHERE|GROUP\s+BY|ORDER\s+BY|HAVING|LIMIT)\b/i);
+      if(m){if(cur.trim())segs.push(cur.trim());cur=m[0].replace(/\s+/g,' ').toUpperCase();i+=m[0].length;continue;}
+    }
+    cur+=s[i++];
+  }
+  if(cur.trim())segs.push(cur.trim());
+  return segs;
+}
+
+// Find matching close paren, return index just past it
+function findCloseParen(s, openIdx) {
+  let depth=1, j=openIdx+1;
+  while(j<s.length&&depth>0){
+    if(s[j]==='(')depth++;
+    else if(s[j]===')')depth--;
+    j++;
+  }
+  return j; // index after ')'
+}
+
+// Render subquery/CTE body aligned to one column after the opening paren
+function renderSubquery(prefixBeforeParen, subSQL, indentSize, commaPos) {
+  const col       = prefixBeforeParen.length;
+  const subIndent = ' '.repeat(col + 1);
+  const closePad  = ' '.repeat(col);
+  const { formatted } = formatSQL(subSQL.trim(), indentSize, commaPos);
+  const body = formatted.split('\n').map(l => subIndent + l).join('\n');
+  return prefixBeforeParen + '(\n' + body + '\n' + closePad + ')';
+}
+
+// Render one expression; expand any contained subquery
+function renderExpr(expr, linePrefix, indentSize, commaPos) {
+  let i=0;
+  while(i<expr.length){
+    if(expr[i]==='('){
+      const j = findCloseParen(expr, i);
+      const inner = expr.slice(i+1, j-1).trim();
+      if(/^SELECT\b/i.test(inner)){
+        const before = expr.slice(0,i);
+        const after  = expr.slice(j);
+        return renderSubquery(linePrefix+before, inner, indentSize, commaPos) + after;
+      }
+      i=j; continue;
+    }
+    i++;
+  }
+  return linePrefix+expr;
+}
+
+// ── NEW: CTE renderer ─────────────────────────────────────────────────────────
+// Input:  "WITH cte1 AS (...), cte2 AS (...)"  (already upcased)
+// Output: formatted WITH block, one CTE per section, bracket-aligned bodies
+
+function renderWithClause(withBody, indentSize, commaPos) {
+  // withBody is everything after "WITH "
+  // Split into individual CTEs by comma at depth 0
+  const cteParts = splitByCommaDepth0(withBody);
+  const lines = ['WITH'];
+
+  cteParts.forEach((part, idx) => {
+    part = part.trim();
+    const isLast = idx === cteParts.length - 1;
+
+    // Match:  cte_name AS (...)
+    const m = part.match(/^(\w+)\s+AS\s*\(/i);
+    if (!m) {
+      // Fallback — just push as-is
+      lines.push('  ' + part + (isLast ? '' : ','));
+      return;
+    }
+
+    const cteName   = m[1];
+    const parenStart = part.indexOf('(', m[0].length - 1);
+    const parenEnd   = findCloseParen(part, parenStart); // index after ')'
+    const innerSQL   = part.slice(parenStart + 1, parenEnd - 1).trim();
+
+    // The prefix on this line: "  cte_name AS "
+    // (2 spaces indent under WITH)
+    const linePrefix = '  ' + cteName + ' AS ';
+
+    const { formatted } = formatSQL(innerSQL, indentSize, commaPos);
+    const col       = linePrefix.length;          // column of the '('
+    const subIndent = ' '.repeat(col + 1);
+    const closePad  = ' '.repeat(col);
+
+    const body = formatted.split('\n').map(l => subIndent + l).join('\n');
+    const block = linePrefix + '(\n' + body + '\n' + closePad + ')' + (isLast ? '' : ',');
+
+    lines.push(block);
+  });
+
+  return lines.join('\n');
+}
+
+// ── Core formatter ────────────────────────────────────────────────────────────
+
+function formatSQL(raw, indentSize, commaPos) {
+  try {
+    const PAD = ' '.repeat(indentSize);
+
+    let s = upcase(raw);
+    s = s.replace(/\s+/g,' ').trim();
+    s = s.replace(/\s*([=<>!]+)\s*/g,' $1 ').replace(/\s{2,}/g,' ');
+
+    // Protect string literals
+    const strings = [];
+    s = s.replace(/'[^']*'/g, m => { strings.push(m); return `§${strings.length-1}§`; });
+
+    const outLines = [];
+
+    // ── Handle leading WITH clause ────────────────────────────────────────────
+    // Strip it off before clause-splitting (it contains commas at depth 0
+    // that would confuse splitByCommaDepth0 in SELECT)
+    let mainSQL = s;
+    if (/^WITH\b/i.test(s)) {
+      // Find where the WITH block ends and the main SELECT begins
+      // Walk past all CTE parens at depth 0
+      let i = 5; // past "WITH "
+      let depth = 0;
+      let withEnd = i;
+      while (i < s.length) {
+        if (s[i]==='(') depth++;
+        else if (s[i]===')') { depth--; if (depth===0) withEnd=i+1; }
+        else if (s[i]===',' && depth===0) { /* CTE separator, keep going */ }
+        else if (depth===0) {
+          // Check if we've hit SELECT / FROM etc. outside any paren
+          const m = s.slice(i).match(/^(SELECT|FROM|INSERT|UPDATE|DELETE)\b/i);
+          if (m) { withEnd = i; break; }
+        }
+        i++;
+      }
+      const withPart = s.slice(5, withEnd).trim();  // body after "WITH "
+      mainSQL        = s.slice(withEnd).trim();
+
+      const withBlock = renderWithClause(withPart, indentSize, commaPos);
+      outLines.push(withBlock);
+    }
+
+    // ── Main query ────────────────────────────────────────────────────────────
+    const clauses = splitIntoClauses(mainSQL);
+
+    clauses.forEach(tok => {
+      tok = tok.trim();
+      if (!tok) return;
+
+      if (/^SELECT/.test(tok)) {
+        outLines.push('SELECT');
+        const cols = splitByCommaDepth0(tok.replace(/^SELECT\s*/,''));
+        cols.forEach((col, idx) => {
+          col = col.trim();
+          const isLast = idx === cols.length-1;
+          outLines.push(commaPos==='after'
+            ? PAD + col + (isLast ? '' : ',')
+            : PAD + (idx===0 ? '  ' : ', ') + col);
+        });
+
+      } else if (/^FROM/.test(tok)) {
+        outLines.push(tok);
+
+      } else if (/^(LEFT JOIN|RIGHT JOIN|INNER JOIN|OUTER JOIN|JOIN)/.test(tok)) {
+        const m    = tok.match(/^(LEFT JOIN|RIGHT JOIN|INNER JOIN|OUTER JOIN|JOIN)\s*/);
+        const rest = tok.slice(m[0].length);
+        const onIdx = rest.search(/\bON\b/);
+        if (onIdx > -1) {
+          outLines.push(m[1]+' '+rest.slice(0,onIdx).trim());
+          outLines.push(PAD+'ON '+rest.slice(onIdx+2).trim());
+        } else {
+          outLines.push(tok);
+        }
+
+      } else if (/^(WHERE|HAVING)/.test(tok)) {
+        const m = tok.match(/^(WHERE|HAVING)\s*/);
+        outLines.push(m[1]);
+        splitByAndOrDepth0(tok.slice(m[0].length)).forEach(cond => {
+          if (!cond.trim()) return;
+          outLines.push(renderExpr(cond.trim(), PAD, indentSize, commaPos));
+        });
+
+      } else if (/^(GROUP BY|ORDER BY)/.test(tok)) {
+        const m    = tok.match(/^(GROUP BY|ORDER BY)\s*/);
+        const cols = splitByCommaDepth0(tok.slice(m[0].length));
+        outLines.push(m[1]);
+        cols.forEach((col, idx) => {
+          col = col.trim();
+          const isLast = idx===cols.length-1;
+          outLines.push(commaPos==='after'
+            ? PAD + col + (isLast ? '' : ',')
+            : PAD + (idx===0 ? '  ' : ', ') + col);
+        });
+
+      } else {
+        outLines.push(tok);
+      }
+    });
+
+    let result = outLines.join('\n');
+    strings.forEach((str,i) => {
+      result = result.replace(new RegExp(`§${i}§`,'g'), str);
+    });
+
+    return { formatted: result, error: null };
+
+  } catch(err) {
+    return { formatted: raw, error: err.message };
+  }
+}
+
+
+
+function detectDialect(sql) {
+  if (/distribution\s*=\s*(hash|round_robin|replicate)/i.test(sql) ||
+      /clustered\s+columnstore\s+index/i.test(sql) ||
+      /sys\.dm_pdw/i.test(sql)) return 'Azure Synapse';
+  if (/stored\s+as\s+(parquet|orc|textfile|avro|rcfile|sequencefile)/i.test(sql) ||
+      /location\s+'s3:\/\//i.test(sql) ||
+      /row\s+format\s+serde/i.test(sql) ||
+      /external\s+table/i.test(sql) ||
+      /msck\s+repair\s+table/i.test(sql) ||
+      /"\$path"/i.test(sql)) return 'AWS Athena';
+  if (/zorder\s+by/i.test(sql) ||
+      /describe\s+history/i.test(sql) ||
+      /\/mnt\/delta\//i.test(sql) ||
+      /delta\s+live\s+table/i.test(sql) ||
+      /vacuum\b.*retain/i.test(sql) ||
+      (/merge\s+into\b/i.test(sql) && /when\s+(not\s+)?matched/i.test(sql)) ||
+      (/using\s+delta/i.test(sql) && !/lateral\s+view/i.test(sql))) return 'Databricks';
+  if (/struct\s*<|unnest\s*\(|qualify\b|`\w+\.\w+\.\w+`|farm_fingerprint/i.test(sql)) return 'BigQuery';
+  if (/variant\b|object_construct|flatten\s*\(|iff\s*\(|\$\d|zeroifnull/i.test(sql)) return 'Snowflake';
+  if (/::[\w]+|returning\b|ilike\b|jsonb?\b|on conflict|generate_series/i.test(sql)) return 'PostgreSQL';
+  if (/nolock|nvarchar|select\s+top\s+\d|cross apply|outer apply/i.test(sql)) return 'SQL Server';
+  if (/auto_increment|engine\s*=|group_concat/i.test(sql)) return 'MySQL';
+  if (/distkey|sortkey|diststyle|unload\b|stv_\w+/i.test(sql)) return 'Amazon Redshift';
+  if (/explode\s*\(|collect_list|lateral\s+view|using\s+delta/i.test(sql)) return 'Spark SQL';
+  return 'Generic SQL';
+}
+
+
+// ── Syntax highlight ──────────────────────────────────────────────────────────
+function hl(sql) {
+  return sql
+    .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
+    .replace(/'[^']*'/g, m => `<span class="str">${m}</span>`)
+    .replace(/(--[^\n]*)/g, m => `<span class="cmt">${m}</span>`)
+    .replace(/\b(SELECT|FROM|WHERE|LEFT|RIGHT|INNER|OUTER|JOIN|ON|GROUP BY|ORDER BY|HAVING|LIMIT|AND|OR|NOT|IN|AS|DISTINCT|WITH|UNION|ALL|EXISTS|BETWEEN|IS|NULL|TRUE|FALSE|ASC|DESC|CASE|WHEN|THEN|ELSE|END|MERGE|USING|MATCHED|INSERT|UPDATE|DELETE|VALUES|SET|EXTERNAL|STORED|LOCATION|ROW|FORMAT|SERDE|OPTIMIZE|VACUUM|ZORDER|DESCRIBE|HISTORY|DISTRIBUTION|CLUSTERED|COLUMNSTORE)\b/g,
+      m => `<span class="kw">${m}</span>`)
+    .replace(/\b(AVG|SUM|COUNT|MIN|MAX|COALESCE|NULLIF|CAST|TRIM|LOWER|UPPER|CONCAT|NOW|ROUND|ABS|LENGTH|DATE_TRUNC|REPLACE|IFF|ZEROIFNULL|UNNEST|FLATTEN|EXPLODE|COLLECT_LIST)\b/g,
+      m => `<span class="fn">${m}</span>`)
+    .replace(/\b(\d+(?:\.\d+)?)\b/g, m => `<span class="num">${m}</span>`);
+}
+
+// ── Theme ─────────────────────────────────────────────────────────────────────
+function toggleTheme() {
+  const html = document.documentElement;
+  const next = html.getAttribute('data-theme') === 'light' ? 'dark' : 'light';
+  html.setAttribute('data-theme', next);
+  localStorage.setItem('eigenzsql-theme', next);
+}
+
+// Restore saved theme
+(function() {
+  const saved = localStorage.getItem('eigenzsql-theme');
+  if (saved) document.documentElement.setAttribute('data-theme', saved);
+})();
+
+// ── State ─────────────────────────────────────────────────────────────────────
+const SAMPLE = "with monthly_sales as (select date_trunc('month',created_at) as month,sum(total) as revenue from orders where status='complete' group by 1),big_spenders as (select user_id,sum(total) as lifetime_value from orders group by user_id having sum(total)>500) select u.id,u.name,u.email,ms.month,ms.revenue,bs.lifetime_value from users u join monthly_sales ms on u.created_at<=ms.month join big_spenders bs on u.id=bs.user_id where u.active=true and ms.revenue>(select avg(revenue) from monthly_sales) order by bs.lifetime_value desc limit 50";
+let lastPlain = '';
+
+// ── Actions ───────────────────────────────────────────────────────────────────
+function doFormat() {
+  const raw    = document.getElementById('inp').value.trim();
+  const errEl  = document.getElementById('err-box');
+  errEl.style.display = 'none';
+
+  if (!raw) {
+    errEl.textContent = 'Paste some SQL into the input panel first.';
+    errEl.style.display = 'block';
+    return;
+  }
+
+  const dialectSel = document.getElementById('dialect').value;
+  const comma      = document.getElementById('commas').value;
+  const indent     = parseInt(document.getElementById('indent').value);
+  const dialect    = dialectSel === 'auto' ? detectDialect(raw) : dialectSel;
+
+  const { formatted, error } = formatSQL(raw, indent, comma);
+  if (error) {
+    errEl.textContent = 'Formatter error: ' + error;
+    errEl.style.display = 'block';
+    return;
+  }
+
+  lastPlain = '-- Dialect: ' + dialect + '\n' + formatted;
+
+  const outEl = document.getElementById('out');
+  outEl.innerHTML = hl(lastPlain);
+  outEl.className = 'ready';
+
+  document.getElementById('badge').textContent = 'Formatted';
+  document.getElementById('badge').className   = 'badge b-ok';
+
+  const pill = document.getElementById('dialect-pill');
+  pill.textContent = dialect;
+  pill.style.display = 'inline-block';
+
+  const clauseCount = (formatted.match(/^(SELECT|FROM|WHERE|LEFT JOIN|RIGHT JOIN|JOIN|GROUP BY|ORDER BY|HAVING|LIMIT)/gm) || []).length;
+  const subqCount   = (formatted.match(/\(\n\s+SELECT/g) || []).length;
+
+  document.getElementById('sb').textContent = raw.split('\n').length;
+  document.getElementById('sa').textContent = lastPlain.split('\n').length;
+  document.getElementById('sc').textContent = clauseCount;
+  document.getElementById('sq').textContent = subqCount;
+  document.getElementById('stats').style.display = 'flex';
+}
+
+function copyOut() {
+  if (!lastPlain) return;
+  navigator.clipboard.writeText(lastPlain).then(() => {
+    const b = document.querySelector('.copy-btn');
+    const orig = b.textContent;
+    b.textContent = 'Copied!';
+    b.style.color = 'var(--tag-ok-fg)';
+    setTimeout(() => { b.textContent = orig; b.style.color = ''; }, 1600);
+  });
+}
+
+function loadSample() {
+  document.getElementById('inp').value = SAMPLE;
+}
+
+function clearAll() {
+  document.getElementById('inp').value = '';
+  lastPlain = '';
+  const o = document.getElementById('out');
+  o.innerHTML = 'Click \"Format SQL\" to see the result…';
+  o.className = '';
+  document.getElementById('badge').textContent = 'Waiting';
+  document.getElementById('badge').className   = 'badge b-wait';
+  document.getElementById('dialect-pill').style.display = 'none';
+  document.getElementById('stats').style.display = 'none';
+  document.getElementById('err-box').style.display = 'none';
+}
+</script>
+</body>
+</html>
