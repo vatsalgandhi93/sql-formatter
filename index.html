@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>SQL Dialect Formatter v1.6.0 — EigenZ Solutions LLC</title>
+<title>SQL Dialect Formatter v1.7.0 — EigenZ Solutions LLC</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
 <style>
@@ -210,7 +210,7 @@ footer{padding:14px 24px;border-top:1px solid var(--border);display:flex;align-i
 </main>
 
 <footer>
-  <div class="fcopy">&copy; 2026 EigenZ Solutions LLC. &nbsp;<span style="color:var(--accent);font-family:var(--font-code);font-size:10px">v1.6.0</span> SQL Dialect Formatter by EigenZ Solutions LLC. All rights reserved.</div>
+  <div class="fcopy">&copy; 2026 EigenZ Solutions LLC. &nbsp;<span style="color:var(--accent);font-family:var(--font-code);font-size:10px">v1.7.0</span> SQL Dialect Formatter by EigenZ Solutions LLC. All rights reserved.</div>
   <div class="flinks">
     <a href="#">Documentation</a>
     <a href="#">VS Code Extension</a>
@@ -303,6 +303,92 @@ function findCloseParen(s, openIdx) {
   return j;
 }
 
+
+// ── CASE formatting helpers ───────────────────────────────────────────────────
+
+// Split the content between CASE and END into WHEN / ELSE clause strings.
+// Correctly handles nested CASE...END and paren-wrapped expressions.
+function splitCaseClauses(inner) {
+  const parts = [];
+  let cur = '', pdepth = 0, cdepth = 0, i = 0;
+  const s = inner.trim();
+  while (i < s.length) {
+    if (s[i] === '(') { pdepth++; cur += s[i++]; continue; }
+    if (s[i] === ')') { pdepth--; cur += s[i++]; continue; }
+    if (pdepth === 0) {
+      const rem  = s.slice(i);
+      const prev = i === 0 || /\s/.test(s[i-1]);
+      if (/^CASE\b/i.test(rem) && prev) { cdepth++; cur += 'CASE'; i += 4; continue; }
+      if (/^END\b/i.test(rem)  && prev && cdepth > 0) { cdepth--; cur += 'END'; i += 3; continue; }
+      if (cdepth === 0) {
+        if (/^WHEN\b/i.test(rem) && prev) {
+          if (cur.trim()) parts.push(cur.trim());
+          cur = 'WHEN'; i += 4;
+          if (s[i] === ' ') { cur += ' '; i++; }
+          continue;
+        }
+        if (/^ELSE\b/i.test(rem) && prev) {
+          if (cur.trim()) parts.push(cur.trim());
+          cur = 'ELSE'; i += 4;
+          if (s[i] === ' ') { cur += ' '; i++; }
+          continue;
+        }
+      }
+    }
+    cur += s[i++];
+  }
+  if (cur.trim()) parts.push(cur.trim());
+  return parts;
+}
+
+// Expand CASE…END blocks inside an expression, returning a multi-line string
+// with linePrefix already applied. Falls back to linePrefix+expr if no CASE found.
+// Handles: simple CASE, searched CASE, nested CASE, CASE in AND conditions.
+function renderExprWithCase(expr, linePrefix, indentSize, commaPos) {
+  const pad = ' '.repeat(indentSize);
+  let pdepth = 0, i = 0;
+  while (i < expr.length) {
+    if (expr[i] === '(') { pdepth++; i++; continue; }
+    if (expr[i] === ')') { pdepth--; i++; continue; }
+    if (pdepth === 0) {
+      const rem  = expr.slice(i);
+      const prev = i === 0 || /[\s,(]/.test(expr[i-1]);
+      if (/^CASE\b/i.test(rem) && prev) {
+        const before = expr.slice(0, i).trimEnd();
+        // Find matching END tracking nested CASE depth
+        let cdepth = 1, j = i + 4, ip = 0;
+        while (j < expr.length && cdepth > 0) {
+          if (expr[j] === '(') { ip++; j++; continue; }
+          if (expr[j] === ')') { ip--; j++; continue; }
+          if (ip === 0) {
+            const r2 = expr.slice(j), p2 = j === 0 || /\s/.test(expr[j-1]);
+            if (/^CASE\b/i.test(r2) && p2) { cdepth++; j += 4; continue; }
+            if (/^END\b/i.test(r2)  && p2) { cdepth--; if (!cdepth) break; j += 3; continue; }
+          }
+          j++;
+        }
+        const inner = expr.slice(i + 4, j).trim();
+        const after = expr.slice(j + 3).trim();
+        const clauses = splitCaseClauses(inner);
+        let caseExpr = '', whenParts = clauses;
+        if (clauses.length && !/^(WHEN|ELSE)\b/i.test(clauses[0])) {
+          caseExpr = ' ' + clauses[0];
+          whenParts = clauses.slice(1);
+        }
+        const result = [];
+        result.push(linePrefix + (before ? before + ' ' : '') + 'CASE' + caseExpr);
+        whenParts.forEach(clause => {
+          result.push(renderExprWithCase(clause, linePrefix + pad, indentSize, commaPos));
+        });
+        result.push(linePrefix + 'END' + (after ? ' ' + after : ''));
+        return result.join('\n');
+      }
+    }
+    i++;
+  }
+  return linePrefix + expr;
+}
+
 // Render subquery bracket-aligned to the column after its opening paren
 function renderSubquery(prefixBeforeParen, subSQL, indentSize, commaPos) {
   const col       = prefixBeforeParen.length;
@@ -314,7 +400,9 @@ function renderSubquery(prefixBeforeParen, subSQL, indentSize, commaPos) {
 }
 
 // Render one expression, expanding any contained subquery bracket-aligned
+// Render one expression: expand subqueries bracket-aligned, then expand CASE blocks.
 function renderExpr(expr, linePrefix, indentSize, commaPos) {
+  // 1. Check for (SELECT ...) subqueries
   let i=0;
   while (i<expr.length) {
     if (expr[i]==='(') {
@@ -328,6 +416,10 @@ function renderExpr(expr, linePrefix, indentSize, commaPos) {
       i=j; continue;
     }
     i++;
+  }
+  // 2. Expand CASE...END blocks
+  if (/\bCASE\b/i.test(expr)) {
+    return renderExprWithCase(expr, linePrefix, indentSize, commaPos);
   }
   return linePrefix+expr;
 }
@@ -489,9 +581,24 @@ function formatSQL(raw, indentSize, commaPos) {
           // columns), preserve the trailing comma so intent is clear.
           const hasCommentsAfter = lastRealIdx < cols.length - 1;
           const isLast = idx === lastRealIdx && !hasCommentsAfter && trailingCmts.length === 0;
-          outLines.push(commaPos==='after'
-            ? PAD+remaining+(isLast?'':',')
-            : PAD+(idx===0?'  ':' ,')+remaining);
+
+          // Route through CASE expander (also handles plain columns unchanged)
+          const expanded = renderExprWithCase(remaining, PAD, indentSize, commaPos);
+          if (commaPos === 'after') {
+            if (isLast) {
+              outLines.push(expanded);
+            } else {
+              // Comma goes on the last line of the (possibly multi-line) expansion
+              const expLines = expanded.split('\n');
+              expLines[expLines.length - 1] += ',';
+              outLines.push(expLines.join('\n'));
+            }
+          } else {
+            // Leading comma: prepend to first line
+            const expLines = expanded.split('\n');
+            expLines[0] = PAD + (idx === 0 ? '  ' : ', ') + expLines[0].trimStart();
+            outLines.push(expLines.join('\n'));
+          }
 
           // Trailing comments each on their own indented line
           trailingCmts.forEach(t => outLines.push(PAD + t));
