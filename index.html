@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>SQL Dialect Formatter v1.24.0 — EigenZ Solutions LLC</title>
+<title>SQL Dialect Formatter v1.26.0 — EigenZ Solutions LLC</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
 <style>
@@ -229,11 +229,11 @@ footer{padding:14px 24px;border-top:1px solid var(--border);display:flex;align-i
 </main>
 
 <footer>
-  <div class="fcopy">&copy; 2026 EigenZ Solutions LLC. &nbsp;<span style="color:var(--accent);font-family:var(--font-code);font-size:10px">v1.24.0</span> SQL Dialect Formatter by EigenZ Solutions LLC. All rights reserved.</div>
+  <div class="fcopy">&copy; 2026 EigenZ Solutions LLC. &nbsp;<span style="color:var(--accent);font-family:var(--font-code);font-size:10px">v1.26.0</span> SQL Dialect Formatter by EigenZ Solutions LLC. All rights reserved.</div>
   <div class="flinks">
     <a href="#">Documentation</a>
     <a href="#">VS Code Extension</a>
-    <a href="#">GitHub</a>
+    <a href="https://github.com/vatsalgandhi93/sql-formatter" target="_blank" rel="noopener">GitHub</a>
   </div>
 </footer>
 
@@ -528,6 +528,13 @@ function renderExpr(expr, linePrefix, indentSize, commaPos) {
         const expanded = renderCaseInParen(linePrefix + before, inner, indentSize, commaPos);
         return expanded + (after.trim() ? ' ' + after.trim() : '');
       }
+      // ( value-list with line comments inside ) — bracket-align so the
+      // comments don't all collapse onto the same line as the opening paren.
+      // Trigger only when the inner content contains «CMT» placeholders,
+      // since plain inline lists like IN (1, 2, 3) should stay on one line.
+      if (/«CMT\d+»/.test(inner)) {
+        return renderParenList(linePrefix + before, inner, indentSize, commaPos) + after;
+      }
       i = j; continue;
     }
     i++;
@@ -537,6 +544,76 @@ function renderExpr(expr, linePrefix, indentSize, commaPos) {
     return renderExprWithCase(expr, linePrefix, indentSize, commaPos);
   }
   return linePrefix + expr;
+}
+
+// Bracket-align a parenthesized list whose contents contain line comments.
+// Each comma-separated value goes on its own indented line; pure-comment
+// items (between or before/after values) also get their own line.
+function renderParenList(prefix, inner, indentSize, commaPos) {
+  const col       = prefix.length;
+  const itemIndent = ' '.repeat(col + 1);  // align under char after '('
+  const closePad   = ' '.repeat(col);       // close paren under '('
+  const lines = [prefix + '('];
+
+  const items = splitByCommaDepth0(inner)
+    .map(s => s.trim())
+    .filter(Boolean);
+
+  const CMT_ONLY = /^(«CMT\d+»\s*)+$/u;
+  // Determine the last real (non-comment) item to suppress trailing comma
+  let lastReal = items.length - 1;
+  for (let k = items.length - 1; k >= 0; k--) {
+    if (!CMT_ONLY.test(items[k])) { lastReal = k; break; }
+  }
+
+  items.forEach((item, idx) => {
+    // Pure-comment item: emit each comment placeholder on its own line
+    if (CMT_ONLY.test(item)) {
+      (item.match(/«CMT\d+»/gu) || []).forEach(t => lines.push(itemIndent + t));
+      return;
+    }
+
+    // Strip leading comment placeholders
+    let remaining = item;
+    const lead = [];
+    let m;
+    while ((m = remaining.match(/^(«CMT\d+»)\s*/u))) {
+      lead.push(m[1]);
+      remaining = remaining.slice(m[0].length);
+    }
+    lead.forEach(t => lines.push(itemIndent + t));
+
+    // Strip trailing comment placeholders. A single trailing comment stays
+    // inline with the value (inline-comment style); 2+ trailing comments go
+    // on their own lines.
+    const trail = [];
+    const tm = remaining.match(/(\s+«CMT\d+»)+$/u);
+    let inlineTrail = '';
+    if (tm) {
+      const tokens = tm[0].match(/«CMT\d+»/gu) || [];
+      if (tokens.length === 1) {
+        // Keep one trailing comment inline (e.g. value -- comment)
+        inlineTrail = ' ' + tokens[0];
+        remaining = remaining.slice(0, remaining.length - tm[0].length).trim();
+      } else {
+        tokens.forEach(t => trail.push(t));
+        remaining = remaining.slice(0, remaining.length - tm[0].length).trim();
+      }
+    }
+
+    if (!remaining.trim()) {
+      // Edge: content was only comments
+      trail.forEach(t => lines.push(itemIndent + t));
+      return;
+    }
+
+    const isLast = idx === lastReal;
+    lines.push(itemIndent + remaining + (isLast ? '' : ',') + inlineTrail);
+    trail.forEach(t => lines.push(itemIndent + t));
+  });
+
+  lines.push(closePad + ')');
+  return lines.join('\n');
 }
 
 // Render WITH block with bracket-aligned CTE bodies
@@ -677,10 +754,10 @@ function formatDDL(raw, indentSize, commaPos, dialect) {
   // Assemble + restore
   let result = (headerCmts.length ? headerCmts.join('\n') + '\n' : '') + outLines.join('\n');
   strings.forEach((str, i) => {
-    result = result.replace(new RegExp('§' + i + '§','g'), str);
+    result = result.replace(new RegExp('§' + i + '§','g'), () => str);
   });
   comments.forEach((cmt, i) => {
-    result = result.replace('«CMT' + i + '»', cmt);
+    result = result.replace('«CMT' + i + '»', () => cmt);
   });
   return result;
 }
@@ -762,12 +839,12 @@ function formatEmbeddedQuery(queryPart, strings, comments, indentSize, commaPos,
   let raw = queryPart;
   if (strings) {
     strings.forEach((str, i) => {
-      raw = raw.replace(new RegExp('§' + i + '§','g'), str);
+      raw = raw.replace(new RegExp('§' + i + '§','g'), () => str);
     });
   }
   if (comments) {
     comments.forEach((cmt, i) => {
-      raw = raw.replace('«CMT' + i + '»', cmt);
+      raw = raw.replace('«CMT' + i + '»', () => cmt);
     });
   }
   const r = formatStatement(raw, indentSize, commaPos, dialect);
@@ -1226,7 +1303,7 @@ function formatStatement(raw, indentSize, commaPos, dialect) {
                + outLines.join('\n');
 
     strings.forEach((str, i) => {
-      result = result.replace(new RegExp(`§${i}§`,'g'), str);
+      result = result.replace(new RegExp(`§${i}§`,'g'), () => str);
     });
     comments.forEach((cmt, i) => {
       const placeholder = `«CMT${i}»`;
@@ -1242,9 +1319,9 @@ function formatStatement(raw, indentSize, commaPos, dialect) {
           if (k === 0) return ln.trimEnd();
           return indent + ln.trim();
         }).join('\n');
-        result = result.replace(placeholder, reindented);
+        result = result.replace(placeholder, () => reindented);
       } else {
-        result = result.replace(placeholder, cmt);
+        result = result.replace(placeholder, () => cmt);
       }
     });
 
