@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>SQL Dialect Formatter v1.23.0 — EigenZ Solutions LLC</title>
+<title>SQL Dialect Formatter v1.24.0 — EigenZ Solutions LLC</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
 <style>
@@ -229,7 +229,7 @@ footer{padding:14px 24px;border-top:1px solid var(--border);display:flex;align-i
 </main>
 
 <footer>
-  <div class="fcopy">&copy; 2026 EigenZ Solutions LLC. &nbsp;<span style="color:var(--accent);font-family:var(--font-code);font-size:10px">v1.23.0</span> SQL Dialect Formatter by EigenZ Solutions LLC. All rights reserved.</div>
+  <div class="fcopy">&copy; 2026 EigenZ Solutions LLC. &nbsp;<span style="color:var(--accent);font-family:var(--font-code);font-size:10px">v1.24.0</span> SQL Dialect Formatter by EigenZ Solutions LLC. All rights reserved.</div>
   <div class="flinks">
     <a href="#">Documentation</a>
     <a href="#">VS Code Extension</a>
@@ -331,12 +331,30 @@ function splitByCommaDepth0(s) {
 
 function splitByAndOrDepth0(s) {
   const parts=[]; let depth=0, cur='', i=0;
+  // Track open BETWEEN clauses — each BETWEEN consumes the next depth-0 AND
+  // as part of its 'low AND high' bound, NOT as a real boolean conjunction.
+  let pendingBetweens = 0;
   while (i<s.length) {
     if      (s[i]==='(') { depth++; cur+=s[i++]; continue; }
     else if (s[i]===')') { depth--; cur+=s[i++]; continue; }
     if (depth===0) {
+      // Look for BETWEEN at a word boundary
+      const between = s.slice(i).match(/^BETWEEN\b/i);
+      if (between && (i === 0 || !/[A-Za-z0-9_]/.test(s[i-1]))) {
+        pendingBetweens++;
+        cur += s.slice(i, i + between[0].length);
+        i += between[0].length;
+        continue;
+      }
       const m = s.slice(i).match(/^(AND|OR)\b/i);
-      if (m) {
+      if (m && (i === 0 || !/[A-Za-z0-9_]/.test(s[i-1]))) {
+        // If we have an open BETWEEN and this is AND, consume it as part of BETWEEN
+        if (pendingBetweens > 0 && /^AND$/i.test(m[1])) {
+          pendingBetweens--;
+          cur += s.slice(i, i + m[0].length);
+          i += m[0].length;
+          continue;
+        }
         parts.push(cur.trim());
         cur = m[1].toUpperCase()+' ';
         i += m[0].length;
@@ -987,8 +1005,24 @@ function formatStatement(raw, indentSize, commaPos, dialect) {
         const fromSources = splitByCommaDepth0(fromBody).map(s => s.trim()).filter(Boolean);
 
         if (fromSources.length <= 1) {
-          // Single source — strip trailing comments, push as one line
+          // Single source. If it begins with a derived-table subquery — i.e.
+          // ( SELECT … ) alias — bracket-align it the same way we do for
+          // subqueries in WHERE/JOIN. Otherwise emit on one line.
           const { clean: fromClean, cmts: fromCmts } = stripTrailingCmts(tok);
+          const body = fromClean.replace(/^FROM\s*/i, '');
+          if (body.startsWith('(')) {
+            const closeIdx = findCloseParen(body, 0);
+            if (closeIdx > 0) {
+              const inner = body.slice(1, closeIdx - 1).trim();
+              const after = body.slice(closeIdx).trim();
+              if (/^SELECT\b/i.test(inner)) {
+                outLines.push(renderSubquery('FROM ', inner, indentSize, commaPos) + after);
+                fromCmts.forEach(c => outLines.push(c));
+                prevWasQueryEnd = true;
+                return;
+              }
+            }
+          }
           outLines.push(fromClean);
           fromCmts.forEach(c => outLines.push(c));
         } else {
