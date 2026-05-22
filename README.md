@@ -2,6 +2,8 @@
 
 A dependency-free SQL formatter that produces clean, executable output across 12 SQL dialects. Single HTML file. No install, no server, no internet.
 
+🔗 Link to the [SQL Dialect Formatter](https://vatsalgandhi93.github.io/sql-formatter/)
+
 **By EigenZ Solutions LLC** · **v1.19.0**
 
 ---
@@ -44,8 +46,6 @@ FROM ledger
 Auto-detected, or pick manually.
 
 ☁️ **Cloud** — Azure Synapse · Amazon Redshift · AWS Athena · Databricks · BigQuery · Snowflake
-
-
 🗄️ **Traditional** — PostgreSQL · MySQL · SQL Server · Spark SQL · Generic SQL
 
 ---
