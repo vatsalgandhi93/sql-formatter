@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>SQL Dialect Formatter v1.19.0 — EigenZ Solutions LLC</title>
+<title>SQL Dialect Formatter v1.23.0 — EigenZ Solutions LLC</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
 <style>
@@ -103,6 +103,17 @@ textarea::placeholder{color:var(--text-m);opacity:.5}
 .sn{font-size:20px;font-weight:700;color:var(--accent);font-family:var(--font-code);line-height:1.2}
 .sl{font-size:10px;font-weight:600;color:var(--text-m);margin-top:2px;text-transform:uppercase;letter-spacing:.07em}
 .err-box{padding:10px 14px;border-radius:var(--radius-sm);background:var(--tag-err-bg);border:1px solid var(--tag-err-fg);color:var(--tag-err-fg);font-family:var(--font-code);font-size:12px;display:none;flex-shrink:0}
+.warn-box{padding:12px 16px;border-radius:var(--radius-sm);background:rgba(180,161,57,0.08);border:1px solid var(--accent);color:var(--text);font-family:var(--font-ui);font-size:12.5px;flex-shrink:0;margin-top:8px}
+.warn-head{display:flex;align-items:center;gap:8px;margin-bottom:8px;font-weight:600}
+.warn-icon{display:inline-flex;align-items:center;justify-content:center;width:18px;height:18px;border-radius:50%;background:var(--accent);color:#fff;font-size:11px;font-weight:700;font-family:var(--font-code)}
+.warn-title{color:var(--accent)}
+.warn-count{color:var(--text-m);font-size:11px;font-weight:500;font-family:var(--font-code)}
+.warn-list{margin:0;padding-left:0;list-style:none}
+.warn-list li{padding:8px 10px;border-radius:4px;background:rgba(180,161,57,0.05);margin-bottom:6px;line-height:1.5}
+.warn-list li:last-child{margin-bottom:0}
+.warn-msg{color:var(--text);font-weight:500}
+.warn-hint{display:block;margin-top:4px;color:var(--text-m);font-size:11.5px}
+.warn-hint::before{content:"→ ";color:var(--accent);font-weight:700}
 
 /* Footer */
 footer{padding:14px 24px;border-top:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;flex-shrink:0}
@@ -201,6 +212,14 @@ footer{padding:14px 24px;border-top:1px solid var(--border);display:flex;align-i
   </div>
 
   <div class="err-box" id="err-box"></div>
+  <div class="warn-box" id="warn-box" style="display:none">
+    <div class="warn-head">
+      <span class="warn-icon">!</span>
+      <span class="warn-title">Dialect compatibility</span>
+      <span class="warn-count" id="warn-count"></span>
+    </div>
+    <ul class="warn-list" id="warn-list"></ul>
+  </div>
   <div class="stats" id="stats" style="display:none">
     <div class="stat"><div class="sn" id="sb">—</div><div class="sl">Lines before</div></div>
     <div class="stat"><div class="sn" id="sa">—</div><div class="sl">Lines after</div></div>
@@ -210,7 +229,7 @@ footer{padding:14px 24px;border-top:1px solid var(--border);display:flex;align-i
 </main>
 
 <footer>
-  <div class="fcopy">&copy; 2026 EigenZ Solutions LLC. &nbsp;<span style="color:var(--accent);font-family:var(--font-code);font-size:10px">v1.19.0</span> SQL Dialect Formatter by EigenZ Solutions LLC. All rights reserved.</div>
+  <div class="fcopy">&copy; 2026 EigenZ Solutions LLC. &nbsp;<span style="color:var(--accent);font-family:var(--font-code);font-size:10px">v1.23.0</span> SQL Dialect Formatter by EigenZ Solutions LLC. All rights reserved.</div>
   <div class="flinks">
     <a href="#">Documentation</a>
     <a href="#">VS Code Extension</a>
@@ -232,6 +251,7 @@ function upcase(s) {
     'NOT IN','IN','AS','DISTINCT','WITH','WITH OFFSET','UNION ALL','UNION','INTERSECT','EXCEPT',
     'EXISTS','BETWEEN','IS NOT NULL','IS NULL','TRUE','FALSE','NULL',
     'ASC','DESC','CASE','WHEN','THEN','ELSE','END',
+    'FOR SYSTEM_TIME AS OF','FOR SYSTEM_TIME','FOR VERSION AS OF',
     'OVER','PARTITION BY','ROWS BETWEEN','RANGE BETWEEN','UNBOUNDED PRECEDING',
     'UNBOUNDED FOLLOWING','CURRENT ROW','PRECEDING','FOLLOWING','NULLS FIRST','NULLS LAST',
 
@@ -337,7 +357,7 @@ function splitIntoClauses(s) {
     else if (s[i]===')') { depth--; cur+=s[i++]; continue; }
     if (depth===0) {
       const m = s.slice(i).match(
-        /^(SELECT|FROM|LEFT\s+OUTER\s+JOIN|RIGHT\s+OUTER\s+JOIN|FULL\s+OUTER\s+JOIN|LEFT\s+JOIN|RIGHT\s+JOIN|INNER\s+JOIN|OUTER\s+JOIN|CROSS\s+JOIN|FULL\s+JOIN|JOIN|WHERE|GROUP\s+BY|ORDER\s+BY|HAVING|QUALIFY|LIMIT)\b/i
+        /^(SELECT|FROM|LEFT\s+OUTER\s+JOIN|RIGHT\s+OUTER\s+JOIN|FULL\s+OUTER\s+JOIN|LEFT\s+JOIN|RIGHT\s+JOIN|INNER\s+JOIN|OUTER\s+JOIN|CROSS\s+JOIN|FULL\s+JOIN|JOIN|WHERE|GROUP\s+BY|ORDER\s+BY|HAVING|QUALIFY|LIMIT|FOR\s+SYSTEM_TIME|FOR\s+VERSION\s+AS\s+OF)\b/i
       );
       if (m) {
         if (cur.trim()) segs.push(cur.trim());
@@ -538,47 +558,268 @@ function stripTrailingCmts(tok) {
     cmts:  m[0].match(/«CMT\d+»/gu) || []
   };
 }
-function formatSQL(raw, indentSize, commaPos, dialect) {
+
+// Basic DDL formatter — handles CREATE TABLE column lists, otherwise pretty-prints
+// top-level keywords. Goal: make DDL readable without breaking syntax.
+function formatDDL(raw, indentSize, commaPos, dialect) {
+  commaPos = commaPos || 'after';
+  dialect  = dialect  || 'Generic SQL';
+  const PAD = ' '.repeat(indentSize);
+
+  // Tokenize strings + comments once, safely
+  const { stripped, strings, comments } = protectLiteralsAndComments(raw);
+  let s = stripped;
+
+  // Collapse whitespace (placeholders are opaque)
+  s = s.replace(/\s+/g, ' ').trim();
+
+  // Peel leading comment placeholders (header block / line comments)
+  const headerCmts = [];
+  let m;
+  while ((m = s.match(/^(«CMT\d+»)\s*/))) {
+    headerCmts.push(m[1]);
+    s = s.slice(m[0].length);
+  }
+
+  // Uppercase common DDL keywords
+  const DDL_KWS = [
+    'CREATE OR REPLACE TABLE','CREATE TEMPORARY TABLE','CREATE TEMP TABLE',
+    'CREATE EXTERNAL TABLE','CREATE TABLE','CREATE OR REPLACE VIEW','CREATE VIEW',
+    'CREATE MATERIALIZED VIEW','CREATE UNIQUE INDEX','CREATE INDEX',
+    'CREATE SCHEMA','CREATE DATABASE',
+    'ALTER TABLE','ALTER VIEW','ALTER SCHEMA','ALTER DATABASE','ALTER COLUMN',
+    'ADD COLUMN','DROP COLUMN','RENAME COLUMN','RENAME TO',
+    'DROP TABLE','DROP VIEW','DROP INDEX','DROP SCHEMA','DROP DATABASE',
+    'TRUNCATE TABLE','TRUNCATE',
+    'IF NOT EXISTS','IF EXISTS','PRIMARY KEY','FOREIGN KEY','REFERENCES',
+    'UNIQUE','NOT NULL','NULL','DEFAULT','USING DELTA','USING PARQUET','USING',
+    'ENCODE','DISTSTYLE','DISTKEY','SORTKEY','COMPOUND SORTKEY','INTERLEAVED SORTKEY',
+    'BACKUP','AUTO',
+    'PARTITION BY','CLUSTER BY','LOCATION','STORED AS','ROW FORMAT','SERDE',
+    'TBLPROPERTIES','OPTIONS','WITH','AS','GRANT','REVOKE','TO','FROM','ON','PRIVILEGES',
+    'COMMENT'
+  ];
+  DDL_KWS.forEach(kw => {
+    s = s.replace(new RegExp('\\b' + kw.replace(/ /g,'\\s+') + '\\b','gi'), kw);
+  });
+
+  let outLines = [];
+
+  // ── Try to match: CREATE [...] TABLE name ( column-list ) [tail]
+  const ct = s.match(/^(CREATE\s+(?:OR\s+REPLACE\s+)?(?:TEMPORARY\s+|TEMP\s+|EXTERNAL\s+)?TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?[^\s(]+)/i);
+  if (ct) {
+    let pos = ct[0].length;
+    // Skip whitespace
+    while (s[pos] === ' ') pos++;
+    let columnLines = null;
+    if (s[pos] === '(') {
+      const closeIdx = findMatchingParen(s, pos);
+      if (closeIdx > pos) {
+        const inner = s.slice(pos + 1, closeIdx).trim();
+        const items = splitTopLevelCommas(inner);
+        columnLines = [ct[1] + ' ('];
+        items.forEach((it, idx) => {
+          columnLines.push(PAD + it.trim() + (idx === items.length - 1 ? '' : ','));
+        });
+        columnLines.push(')');
+        pos = closeIdx + 1;
+      }
+    } else {
+      // No column list (e.g. CTAS without explicit cols)
+      columnLines = [ct[1]];
+    }
+
+    if (columnLines) {
+      outLines.push(...columnLines);
+      // Process tail: USING / OPTIONS / TBLPROPERTIES / PARTITION BY / etc. and AS
+      let tail = s.slice(pos).trim();
+      tail = formatDDLTail(tail, indentSize, commaPos, dialect, outLines);
+      if (tail) outLines.push(tail);
+    } else {
+      // Couldn't parse — fallback
+      outLines.push(s);
+    }
+  } else if (/^CREATE\s+(OR\s+REPLACE\s+)?(MATERIALIZED\s+)?VIEW\b/i.test(s)) {
+    // CREATE VIEW name AS SELECT ... — keep header on one line, delegate body
+    const viewMatch = s.match(/^(CREATE\s+(?:OR\s+REPLACE\s+)?(?:MATERIALIZED\s+)?VIEW\s+[^\s]+)(?:\s+AS\b)?\s*(.*)$/i);
+    if (viewMatch) {
+      outLines.push(viewMatch[1] + (viewMatch[2] ? ' AS' : ''));
+      if (viewMatch[2]) {
+        outLines.push(formatEmbeddedQuery(viewMatch[2], strings, comments, indentSize, commaPos, dialect));
+      }
+    } else {
+      outLines.push(s);
+    }
+  } else {
+    // Fallback: break before common option keywords
+    let r = s.replace(/\s+(DISTSTYLE|DISTKEY|SORTKEY|COMPOUND\s+SORTKEY|INTERLEAVED\s+SORTKEY|PARTITION\s+BY|CLUSTER\s+BY|LOCATION|STORED\s+AS|TBLPROPERTIES|OPTIONS|USING|AS)\b/gi, '\n$1');
+    outLines.push(r);
+  }
+
+  // Assemble + restore
+  let result = (headerCmts.length ? headerCmts.join('\n') + '\n' : '') + outLines.join('\n');
+  strings.forEach((str, i) => {
+    result = result.replace(new RegExp('§' + i + '§','g'), str);
+  });
+  comments.forEach((cmt, i) => {
+    result = result.replace('«CMT' + i + '»', cmt);
+  });
+  return result;
+}
+
+// Format the part of a DDL after the column-list close paren. Returns a string
+// that the caller appends after the column-list. Handles USING / OPTIONS /
+// TBLPROPERTIES (...) / PARTITION BY ... / CLUSTER BY ... / LOCATION ... /
+// AS <query>. The AS portion is delegated to formatStatement.
+function formatDDLTail(tail, indentSize, commaPos, dialect, outLines) {
+  if (!tail) return '';
+  const PAD = ' '.repeat(indentSize);
+  const lines = [];
+  let s = tail;
+
+  // Detect 'AS <query>' — anchor on AS followed by SELECT or WITH
+  // (any other AS, like inside type expressions, will already have been
+  // consumed because we only look at top-level here).
+  const asMatch = s.match(/\bAS\s+(WITH|SELECT)\b/i);
+  let beforeAs = s, queryPart = '';
+  if (asMatch) {
+    beforeAs = s.slice(0, asMatch.index).trim();
+    queryPart = s.slice(asMatch.index + asMatch[0].length - asMatch[1].length).trim();
+  }
+
+  // Process beforeAs: split on top-level option keywords
+  // USING / OPTIONS / TBLPROPERTIES / PARTITION BY / CLUSTER BY / LOCATION /
+  // STORED AS / DISTSTYLE / DISTKEY / SORTKEY / COMPOUND SORTKEY / INTERLEAVED SORTKEY
+  const OPT_RE = /\b(USING\s+\S+|OPTIONS|TBLPROPERTIES|PARTITION\s+BY|CLUSTER\s+BY|LOCATION|STORED\s+AS|DISTSTYLE|DISTKEY|SORTKEY|COMPOUND\s+SORTKEY|INTERLEAVED\s+SORTKEY|COMMENT)\b/gi;
+  let parts = [];
+  let lastIdx = 0;
+  let mm;
+  const positions = [];
+  while ((mm = OPT_RE.exec(beforeAs)) !== null) positions.push(mm.index);
+  if (positions.length === 0 && beforeAs.trim()) {
+    lines.push(beforeAs.trim());
+  } else {
+    positions.forEach((p, i) => {
+      const end = i + 1 < positions.length ? positions[i+1] : beforeAs.length;
+      let chunk = beforeAs.slice(p, end).trim();
+      // If chunk contains a parenthesized list like TBLPROPERTIES ( 'k' = 'v', ... )
+      // split items onto separate lines for readability.
+      const parenStart = chunk.indexOf('(');
+      if (parenStart > -1) {
+        const parenEnd = findMatchingParen(chunk, parenStart);
+        if (parenEnd > parenStart) {
+          const head = chunk.slice(0, parenStart).trim();
+          const inner = chunk.slice(parenStart + 1, parenEnd).trim();
+          const after = chunk.slice(parenEnd + 1).trim();
+          const items = splitTopLevelCommas(inner);
+          if (items.length > 1) {
+            lines.push(head + ' (');
+            items.forEach((it, idx) => {
+              lines.push(PAD + it.trim() + (idx === items.length - 1 ? '' : ','));
+            });
+            lines.push(')' + (after ? ' ' + after : ''));
+            return;
+          }
+        }
+      }
+      lines.push(chunk);
+    });
+  }
+
+  if (queryPart) {
+    lines.push('AS');
+    lines.push(formatEmbeddedQuery(queryPart, null, null, indentSize, commaPos, dialect));
+  }
+
+  return lines.join('\n');
+}
+
+// Format a SELECT/WITH subquery that's embedded inside a DDL statement (CTAS).
+// We pass it through formatStatement, but first we need to restore strings and
+// comments because formatStatement does its own tokenization.
+function formatEmbeddedQuery(queryPart, strings, comments, indentSize, commaPos, dialect) {
+  // If we already have strings/comments arrays, expand placeholders back to
+  // their original text before re-tokenizing in formatStatement. Otherwise the
+  // string is already raw.
+  let raw = queryPart;
+  if (strings) {
+    strings.forEach((str, i) => {
+      raw = raw.replace(new RegExp('§' + i + '§','g'), str);
+    });
+  }
+  if (comments) {
+    comments.forEach((cmt, i) => {
+      raw = raw.replace('«CMT' + i + '»', cmt);
+    });
+  }
+  const r = formatStatement(raw, indentSize, commaPos, dialect);
+  return r.error ? raw : r.formatted;
+}
+
+
+function findMatchingParen(s, openIdx) {
+  let depth = 1;
+  for (let i = openIdx + 1; i < s.length; i++) {
+    if (s[i] === '(') depth++;
+    else if (s[i] === ')') {
+      depth--;
+      if (depth === 0) return i;
+    }
+  }
+  return -1;
+}
+
+function splitTopLevelCommas(s) {
+  const out = [];
+  let buf = '', depth = 0;
+  for (let i = 0; i < s.length; i++) {
+    if (s[i] === '(') { depth++; buf += s[i]; continue; }
+    if (s[i] === ')') { depth--; buf += s[i]; continue; }
+    if (s[i] === ',' && depth === 0) { out.push(buf); buf = ''; continue; }
+    buf += s[i];
+  }
+  if (buf.trim()) out.push(buf);
+  return out;
+}
+
+function formatStatement(raw, indentSize, commaPos, dialect) {
   dialect = dialect || 'Generic SQL';
   try {
+    // Route DDL/DCL statements through a minimal renderer that handles the
+    // column-list inside CREATE TABLE (...) and otherwise pretty-prints clause
+    // keywords on their own lines. The SELECT pipeline below assumes DML shape.
+    // Peel leading comments first so a /* */ block before CREATE TABLE doesn't
+    // hide the DDL keyword from this check.
+    let probe = raw.replace(/^\s+/, '');
+    while (true) {
+      if (probe.startsWith('/*')) {
+        const end = probe.indexOf('*/');
+        if (end === -1) break;
+        probe = probe.slice(end + 2).replace(/^\s+/, '');
+        continue;
+      }
+      if (probe.startsWith('--') || probe.startsWith('#')) {
+        const nl = probe.indexOf('\n');
+        probe = nl === -1 ? '' : probe.slice(nl + 1).replace(/^\s+/, '');
+        continue;
+      }
+      break;
+    }
+    if (/^(CREATE|ALTER|DROP|TRUNCATE|GRANT|REVOKE|COMMENT|RENAME)\s/i.test(probe)) {
+      return { formatted: formatDDL(raw, indentSize, commaPos, dialect), error: null };
+    }
+
     const PAD = ' '.repeat(indentSize);
 
     // 1. Normalise line endings
     let s = raw.replace(/\r\n/g,'\n').replace(/\r/g,'\n');
 
-    // 2. Protect string literals BEFORE comments so comment characters
-    //    (--, #, /*) inside a string don't get mis-classified as comments.
-    const strings = [];
-    s = s.replace(/'(?:''|[^'])*'/g, m => {
-      strings.push(m);
-      return `§${strings.length-1}§`;
-    });
-
-    // 3. Protect comments. Block /* … */ first (a -- inside /* */ stays inside).
-    //    Block comments that span multiple lines OR sit on their own source line
-    //    get padded with spaces so the later whitespace-collapse step treats them
-    //    as ordinary placeholder tokens that the per-clause comment-extraction
-    //    logic can then peel onto their own output lines.
-    const comments = [];
-    s = s.replace(/\/\*[\s\S]*?\*\//g, (m, off) => {
-      comments.push(m);
-      const id = `«CMT${comments.length-1}»`;
-      const lineStart = s.lastIndexOf('\n', off - 1) + 1;
-      const beforeOnLine = s.slice(lineStart, off);
-      const onOwnLine = m.includes('\n') || /^\s*$/.test(beforeOnLine);
-      return onOwnLine ? ` ${id} ` : id;
-    });
-    s = s.replace(/--[^\n]*/g, m => {
-      comments.push(m);
-      return `«CMT${comments.length-1}»`;
-    });
-    // # line comments — MySQL, BigQuery, Hive, Snowflake all support these.
-    // PostgreSQL/SQL Server don't, but # at start of a SQL line in those
-    // dialects is a syntax error anyway, so safe to treat as a comment here.
-    s = s.replace(/#[^\n]*/g, m => {
-      comments.push(m);
-      return `«CMT${comments.length-1}»`;
-    });
+    // 2. Single-pass tokenizer that recognizes whichever literal opens first
+    //    at each position — string, line comment (-- or #), or block comment.
+    //    This avoids the mutual-eating bug between strings and comments.
+    const { stripped, strings, comments, isBlockMultiline } =
+      protectLiteralsAndComments(s, { padBlockComments: true });
+    s = stripped;
 
     // 3. Collapse to a single line (comment placeholders are opaque now)
     s = s.replace(/\s+/g,' ').trim();
@@ -595,10 +836,28 @@ function formatSQL(raw, indentSize, commaPos, dialect) {
     // 5. Uppercase keywords
     s = upcase(s);
 
-    // 6. Space around operators (=, <, >, !, <=, >=, <>)
+    // 6. Space around operators (=, <, >, !, <=, >=, <>) — but PROTECT
+    //    arrow tokens first so '->' (lambda) and '=>' (named argument) are not
+    //    split into '- >' or '= >'. They are SQL operators in their own right.
+    s = s.replace(/->/g, '«ARROW_LAMBDA»');
+    s = s.replace(/=>/g, '«ARROW_NAMEDARG»');
     s = s.replace(/\s*([=<>!]+)\s*/g,' $1 ').replace(/\s{2,}/g,' ');
+    s = s.replace(/«ARROW_LAMBDA»/g, '->');
+    s = s.replace(/«ARROW_NAMEDARG»/g, '=>');
 
     // (strings already protected at the top of the pipeline)
+
+    // 7. Enforce line-comment boundary. Any «CMT» placeholder whose source
+    //    was a -- or # line comment originally ended at a newline. The
+    //    whitespace collapse erased that newline. Restore it as an actual \n
+    //    so the clause splitter never merges tokens across a comment line.
+    s = s.replace(/«CMT(\d+)»/g, (m, n) => {
+      const cmt = comments[Number(n)];
+      if (cmt && (cmt.startsWith('--') || cmt.startsWith('#'))) {
+        return m + '\n';
+      }
+      return m;
+    });
 
     const outLines = [];
 
@@ -914,6 +1173,11 @@ function formatSQL(raw, indentSize, commaPos, dialect) {
           trail.forEach(t => outLines.push(PAD + t));
         });
 
+      } else if (/^FOR\s+(SYSTEM_TIME|VERSION)/i.test(tok)) {
+        // Delta Lake / Databricks Time Travel clause — own line
+        const { clean: ftClean, cmts: ftCmts } = stripTrailingCmts(tok);
+        outLines.push(ftClean);
+        ftCmts.forEach(c => outLines.push(c));
       } else {
         // LIMIT, bare tokens — strip trailing comments to their own lines
         const { clean: elseClean, cmts: elseCmts } = stripTrailingCmts(tok);
@@ -957,6 +1221,310 @@ function formatSQL(raw, indentSize, commaPos, dialect) {
   }
 }
 
+
+// ── Dialect feature validator ─────────────────────────────────────────────────
+// Returns an array of {feature, message, hint} warnings when the SQL uses
+// features that aren't supported by the selected dialect. Strings and comments
+// are stripped before scanning so a keyword inside a comment / literal doesn't
+// trigger a false positive.
+function validateDialect(raw, dialect) {
+  if (!dialect || dialect === 'Generic SQL') return [];
+  const { stripped } = protectLiteralsAndComments(raw);
+  const sql = stripped;
+  const warnings = [];
+
+  const FEATURES = [
+    { id: 'hash_comment',     regex: /(?:^|\n)\s*#[^\n]/, scanRaw: true,
+      supportedBy: ['MySQL','BigQuery','Snowflake','Databricks','Spark SQL'],
+      message: '# line comments are not standard in this dialect',
+      hint: 'Use -- instead' },
+
+    { id: 'qualify_clause',   regex: /\bQUALIFY\b/i,
+      supportedBy: ['Snowflake','BigQuery','Databricks','Spark SQL'],
+      message: 'QUALIFY clause is not supported in this dialect',
+      hint: 'Wrap the window function in a subquery and filter with WHERE' },
+
+    { id: 'select_top',       regex: /\bSELECT\s+(?:DISTINCT\s+)?TOP\s+\d+/i,
+      supportedBy: ['SQL Server','Azure Synapse'],
+      message: 'SELECT TOP is SQL-Server-only syntax',
+      hint: 'Use LIMIT N or FETCH FIRST N ROWS ONLY on other dialects' },
+
+    { id: 'cast_double_colon', regex: /[a-zA-Z0-9_)\]]::[a-zA-Z]/,
+      supportedBy: ['PostgreSQL','Amazon Redshift','Snowflake','Databricks'],
+      message: ':: cast operator is not supported in this dialect',
+      hint: 'Use CAST(value AS type) instead' },
+
+    { id: 'safe_cast',        regex: /\bSAFE_CAST\s*\(/i,
+      supportedBy: ['BigQuery'],
+      message: 'SAFE_CAST is BigQuery-specific',
+      hint: 'Use TRY_CAST on Snowflake/Databricks/SQL Server, or CAST elsewhere' },
+
+    { id: 'try_cast',         regex: /\bTRY_CAST\s*\(/i,
+      supportedBy: ['Snowflake','Databricks','SQL Server','Azure Synapse','Spark SQL'],
+      message: 'TRY_CAST is not supported in this dialect',
+      hint: 'Use SAFE_CAST on BigQuery, or CAST elsewhere' },
+
+    { id: 'iif',              regex: /\bIIF\s*\(/i,
+      supportedBy: ['SQL Server','Azure Synapse'],
+      message: 'IIF() is SQL-Server-only',
+      hint: 'Use IFF() on Snowflake or CASE WHEN elsewhere' },
+
+    { id: 'iff',              regex: /\bIFF\s*\(/i,
+      supportedBy: ['Snowflake','Databricks','Spark SQL'],
+      message: 'IFF() is not supported in this dialect',
+      hint: 'Use IIF() on SQL Server, or CASE WHEN elsewhere' },
+
+    { id: 'nvl',              regex: /\bNVL\s*\(/i,
+      supportedBy: ['Snowflake','Amazon Redshift','Databricks','Spark SQL'],
+      message: 'NVL() is not standard in this dialect',
+      hint: 'Use COALESCE() — supported everywhere' },
+
+    { id: 'getdate',          regex: /\bGETDATE\s*\(/i,
+      supportedBy: ['SQL Server','Azure Synapse','Amazon Redshift'],
+      message: 'GETDATE() is not portable',
+      hint: 'Use CURRENT_TIMESTAMP — supported in most dialects' },
+
+    { id: 'group_concat',     regex: /\bGROUP_CONCAT\s*\(/i,
+      supportedBy: ['MySQL'],
+      message: 'GROUP_CONCAT is MySQL-specific',
+      hint: 'Use STRING_AGG() on Postgres/SQL Server/BigQuery/Snowflake, or LISTAGG() on Redshift' },
+
+    { id: 'string_agg',       regex: /\bSTRING_AGG\s*\(/i,
+      supportedBy: ['PostgreSQL','SQL Server','BigQuery','Snowflake','Databricks','Spark SQL'],
+      message: 'STRING_AGG is not supported in this dialect',
+      hint: 'Use GROUP_CONCAT() on MySQL, or LISTAGG() on Redshift' },
+
+    { id: 'listagg',          regex: /\bLISTAGG\s*\(/i,
+      supportedBy: ['Snowflake','Amazon Redshift'],
+      message: 'LISTAGG is Snowflake / Redshift / Oracle syntax',
+      hint: 'Use STRING_AGG() elsewhere' },
+
+    { id: 'unnest',           regex: /\bUNNEST\s*\(/i,
+      supportedBy: ['BigQuery','PostgreSQL','Snowflake','AWS Athena'],
+      message: 'UNNEST is not supported in this dialect',
+      hint: 'Use EXPLODE/LATERAL VIEW on Spark/Databricks, FLATTEN on Snowflake, JSON_TABLE on MySQL' },
+
+    { id: 'explode',          regex: /\bEXPLODE\s*\(/i,
+      supportedBy: ['Spark SQL','Databricks'],
+      message: 'EXPLODE() is Spark / Databricks / Hive syntax',
+      hint: 'Use UNNEST() on BigQuery, FLATTEN on Snowflake' },
+
+    { id: 'lateral_view',     regex: /\bLATERAL\s+VIEW\b/i,
+      supportedBy: ['Spark SQL','Databricks'],
+      message: 'LATERAL VIEW is Spark / Databricks / Hive syntax',
+      hint: 'Use cross-join UNNEST() on BigQuery, FLATTEN on Snowflake' },
+
+    { id: 'flatten',          regex: /\bFLATTEN\s*\(/i,
+      supportedBy: ['Snowflake'],
+      message: 'FLATTEN() is Snowflake-specific',
+      hint: 'Use UNNEST() on BigQuery, EXPLODE on Databricks/Spark' },
+
+    { id: 'farm_fingerprint', regex: /\bFARM_FINGERPRINT\s*\(/i,
+      supportedBy: ['BigQuery'],
+      message: 'FARM_FINGERPRINT is BigQuery-specific',
+      hint: 'Use HASH() / MD5 / SHA1 on other dialects' },
+
+    { id: 'object_construct', regex: /\bOBJECT_CONSTRUCT\s*\(/i,
+      supportedBy: ['Snowflake'],
+      message: 'OBJECT_CONSTRUCT is Snowflake-specific',
+      hint: 'Use TO_JSON or named_struct on other dialects' },
+
+    { id: 'distkey',          regex: /\b(DISTKEY|SORTKEY|DISTSTYLE)\b/i,
+      supportedBy: ['Amazon Redshift'],
+      message: 'DISTKEY / SORTKEY / DISTSTYLE are Redshift-specific',
+      hint: 'Use CLUSTER BY / PARTITION BY on Databricks/BigQuery, or remove elsewhere' },
+
+    { id: 'using_delta',      regex: /\bUSING\s+DELTA\b/i,
+      supportedBy: ['Databricks','Spark SQL'],
+      message: 'USING DELTA is Databricks / Delta Lake specific',
+      hint: 'Other dialects use different storage formats — remove or replace' },
+
+    { id: 'returning',        regex: /\bRETURNING\b/i,
+      supportedBy: ['PostgreSQL'],
+      message: 'RETURNING clause is PostgreSQL-specific',
+      hint: 'Use OUTPUT on SQL Server, or a follow-up SELECT elsewhere' },
+
+    { id: 'ilike',            regex: /\bILIKE\b/i,
+      supportedBy: ['PostgreSQL','Snowflake'],
+      message: 'ILIKE is Postgres / Snowflake-specific',
+      hint: 'Use LOWER(col) LIKE LOWER(pattern) elsewhere' },
+
+    { id: 'system_time',      regex: /\bFOR\s+SYSTEM_TIME\b/i,
+      supportedBy: ['Databricks','SQL Server','Spark SQL'],
+      message: 'FOR SYSTEM_TIME (Time Travel) is not standard in this dialect',
+      hint: 'On Snowflake use AT(TIMESTAMP => …); not available on Postgres/MySQL/BigQuery' },
+
+    { id: 'square_brackets',  regex: /\[[a-zA-Z_][a-zA-Z0-9_]*\]/,
+      supportedBy: ['SQL Server','Azure Synapse'],
+      message: '[bracketed identifiers] are SQL-Server-specific',
+      hint: 'Use "double quotes" (Postgres/Snowflake) or `backticks` (MySQL/BigQuery)' },
+
+    { id: 'backtick_idents',  regex: /`[a-zA-Z_][a-zA-Z0-9_]*`/,
+      supportedBy: ['MySQL','BigQuery','Spark SQL','Databricks'],
+      message: '`backtick` identifiers are not supported in this dialect',
+      hint: 'Use "double quotes" (Postgres/Snowflake) or [brackets] (SQL Server)' },
+  ];
+
+  FEATURES.forEach(f => {
+    const target = f.scanRaw ? raw : sql;
+    if (f.regex.test(target) && f.supportedBy.indexOf(dialect) === -1) {
+      warnings.push({ feature: f.id, message: f.message, hint: f.hint });
+    }
+  });
+
+  return warnings;
+}
+
+
+
+
+// Walk the input once and replace string literals and comments with opaque
+// placeholders. Returns { stripped, strings, comments }. Whichever construct
+// opens first at any position wins, so a quote inside a line comment is not
+// mis-treated as a string, and -- inside a string is not mis-treated as a
+// comment. When padBlockComments is true, /* */ that sit on their own source
+// line OR span multiple lines get surrounded with spaces so the per-clause
+// comment-extraction logic in the SELECT pipeline treats them as own-line
+// items after whitespace collapse.
+function protectLiteralsAndComments(src, opts) {
+  opts = opts || {};
+  const padBlockComments = !!opts.padBlockComments;
+  const strings  = [];
+  const comments = [];
+  let out = '';
+  let i = 0;
+
+  while (i < src.length) {
+    const ch = src[i];
+
+    // String literal (handles '' escape)
+    if (ch === "'") {
+      let j = i + 1;
+      while (j < src.length) {
+        if (src[j] === "'" && src[j+1] === "'") { j += 2; continue; }
+        if (src[j] === "'") { j++; break; }
+        j++;
+      }
+      strings.push(src.slice(i, j));
+      out += '§' + (strings.length - 1) + '§';
+      i = j;
+      continue;
+    }
+
+    // Block comment /* … */
+    if (ch === '/' && src[i+1] === '*') {
+      let j = src.indexOf('*/', i + 2);
+      if (j === -1) j = src.length; else j += 2;
+      const cmt = src.slice(i, j);
+      comments.push(cmt);
+      const id = '«CMT' + (comments.length - 1) + '»';
+      if (padBlockComments) {
+        const lineStart = src.lastIndexOf('\n', i - 1) + 1;
+        const beforeOnLine = src.slice(lineStart, i);
+        const onOwnLine = cmt.includes('\n') || /^\s*$/.test(beforeOnLine);
+        out += onOwnLine ? ' ' + id + ' ' : id;
+      } else {
+        out += id;
+      }
+      i = j;
+      continue;
+    }
+
+    // Line comment -- or #
+    if ((ch === '-' && src[i+1] === '-') || ch === '#') {
+      let j = src.indexOf('\n', i);
+      if (j === -1) j = src.length;
+      comments.push(src.slice(i, j));
+      out += '«CMT' + (comments.length - 1) + '»';
+      i = j;
+      continue;
+    }
+
+    out += ch;
+    i++;
+  }
+
+  return { stripped: out, strings, comments };
+}
+
+// Top-level entry point. Splits multi-statement SQL on ; boundaries (respecting
+// strings and comments) and formats each statement independently, then rejoins.
+// This insulates each statement's structure so line comments at the tail of one
+// statement can never bleed into the next.
+function formatSQL(raw, indentSize, commaPos, dialect) {
+  const statements = splitStatements(raw);
+  if (statements.length === 1) {
+    return formatStatement(raw, indentSize, commaPos, dialect);
+  }
+  const parts = [];
+  const errors = [];
+  statements.forEach((stmt, i) => {
+    const text = stmt.text.trim();
+    if (!text) return;
+    const r = formatStatement(text, indentSize, commaPos, dialect);
+    if (r.error) {
+      errors.push(`Statement ${i+1}: ${r.error}`);
+      parts.push(text);
+    } else {
+      parts.push(r.formatted + (stmt.hasSemi ? ';' : ''));
+    }
+  });
+  return {
+    formatted: parts.join('\n\n'),
+    error: errors.length ? errors.join('\n') : null
+  };
+}
+
+// Split a SQL script on ; into individual statements. The split is aware of
+// string literals ('...'), line comments (-- and #), and block comments (/* */)
+// so a semicolon inside any of those is NOT treated as a statement boundary.
+function splitStatements(s) {
+  const stmts = [];
+  let buf = '', i = 0;
+  while (i < s.length) {
+    const ch = s[i];
+
+    // String literal (handle '' escape)
+    if (ch === "'") {
+      buf += ch; i++;
+      while (i < s.length) {
+        if (s[i] === "'" && s[i+1] === "'") { buf += "''"; i += 2; continue; }
+        if (s[i] === "'") { buf += "'"; i++; break; }
+        buf += s[i++];
+      }
+      continue;
+    }
+
+    // Block comment
+    if (ch === '/' && s[i+1] === '*') {
+      const end = s.indexOf('*/', i + 2);
+      const stop = end === -1 ? s.length : end + 2;
+      buf += s.slice(i, stop);
+      i = stop;
+      continue;
+    }
+
+    // Line comments (-- and #)
+    if ((ch === '-' && s[i+1] === '-') || ch === '#') {
+      const nl = s.indexOf('\n', i);
+      const stop = nl === -1 ? s.length : nl;
+      buf += s.slice(i, stop);
+      i = stop;
+      continue;
+    }
+
+    if (ch === ';') {
+      stmts.push({ text: buf, hasSemi: true });
+      buf = '';
+      i++;
+      continue;
+    }
+
+    buf += s[i++];
+  }
+  if (buf.trim()) stmts.push({ text: buf, hasSemi: false });
+  return stmts;
+}
 function detectDialect(sql) {
   if (/distribution\s*=\s*(hash|round_robin|replicate)/i.test(sql) ||
       /clustered\s+columnstore\s+index/i.test(sql) ||
@@ -1155,6 +1723,31 @@ function doFormat() {
   document.getElementById('sc').textContent = clauses;
   document.getElementById('sq').textContent = subqs;
   document.getElementById('stats').style.display = 'flex';
+
+  // Run dialect compatibility validation and render any warnings
+  var warnings = validateDialect(raw, dialect);
+  var warnBox = document.getElementById('warn-box');
+  var warnList = document.getElementById('warn-list');
+  var warnCount = document.getElementById('warn-count');
+  warnList.innerHTML = '';
+  if (warnings.length === 0) {
+    warnBox.style.display = 'none';
+  } else {
+    warnings.forEach(function(w) {
+      var li = document.createElement('li');
+      var msg = document.createElement('span');
+      msg.className = 'warn-msg';
+      msg.textContent = w.message;
+      var hint = document.createElement('span');
+      hint.className = 'warn-hint';
+      hint.textContent = w.hint;
+      li.appendChild(msg);
+      li.appendChild(hint);
+      warnList.appendChild(li);
+    });
+    warnCount.textContent = '(' + warnings.length + ' issue' + (warnings.length === 1 ? '' : 's') + ' for ' + dialect + ')';
+    warnBox.style.display = 'block';
+  }
 }
 
 function copyOut() {
@@ -1180,6 +1773,7 @@ function clearAll() {
   document.getElementById('dialect-pill').style.display = 'none';
   document.getElementById('stats').style.display = 'none';
   document.getElementById('err-box').style.display = 'none';
+  document.getElementById('warn-box').style.display = 'none';
 }
 syncInLn();
 </script>
