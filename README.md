@@ -46,6 +46,8 @@ FROM ledger
 Auto-detected, or pick manually.
 
 ☁️ **Cloud** — Azure Synapse · Amazon Redshift · AWS Athena · Databricks · BigQuery · Snowflake
+
+
 🗄️ **Traditional** — PostgreSQL · MySQL · SQL Server · Spark SQL · Generic SQL
 
 ---
