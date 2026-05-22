@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>SQL Dialect Formatter v1.15.0 — EigenZ Solutions LLC</title>
+<title>SQL Dialect Formatter v1.19.0 — EigenZ Solutions LLC</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
 <style>
@@ -210,7 +210,7 @@ footer{padding:14px 24px;border-top:1px solid var(--border);display:flex;align-i
 </main>
 
 <footer>
-  <div class="fcopy">&copy; 2026 EigenZ Solutions LLC. &nbsp;<span style="color:var(--accent);font-family:var(--font-code);font-size:10px">v1.15.0</span> SQL Dialect Formatter by EigenZ Solutions LLC. All rights reserved.</div>
+  <div class="fcopy">&copy; 2026 EigenZ Solutions LLC. &nbsp;<span style="color:var(--accent);font-family:var(--font-code);font-size:10px">v1.19.0</span> SQL Dialect Formatter by EigenZ Solutions LLC. All rights reserved.</div>
   <div class="flinks">
     <a href="#">Documentation</a>
     <a href="#">VS Code Extension</a>
@@ -376,7 +376,7 @@ function splitCaseClauses(inner) {
     if (s[i] === ')') { pdepth--; cur += s[i++]; continue; }
     if (pdepth === 0) {
       const rem  = s.slice(i);
-      const prev = i === 0 || /\s/.test(s[i-1]);
+      const prev = i === 0 || !/[A-Za-z0-9_]/.test(s[i-1]);
       if (/^CASE\b/i.test(rem) && prev) { cdepth++; cur += 'CASE'; i += 4; continue; }
       if (/^END\b/i.test(rem)  && prev && cdepth > 0) { cdepth--; cur += 'END'; i += 3; continue; }
       if (cdepth === 0) {
@@ -411,7 +411,7 @@ function renderExprWithCase(expr, linePrefix, indentSize, commaPos) {
     if (expr[i] === ')') { pdepth--; i++; continue; }
     if (pdepth === 0) {
       const rem  = expr.slice(i);
-      const prev = i === 0 || /[\s,(]/.test(expr[i-1]);
+      const prev = i === 0 || !/[A-Za-z0-9_]/.test(expr[i-1]);
       if (/^CASE\b/i.test(rem) && prev) {
         const before = expr.slice(0, i).trimEnd();
         // Find matching END tracking nested CASE depth
@@ -420,7 +420,7 @@ function renderExprWithCase(expr, linePrefix, indentSize, commaPos) {
           if (expr[j] === '(') { ip++; j++; continue; }
           if (expr[j] === ')') { ip--; j++; continue; }
           if (ip === 0) {
-            const r2 = expr.slice(j), p2 = j === 0 || /\s/.test(expr[j-1]);
+            const r2 = expr.slice(j), p2 = j === 0 || !/[A-Za-z0-9_]/.test(expr[j-1]);
             if (/^CASE\b/i.test(r2) && p2) { cdepth++; j += 4; continue; }
             if (/^END\b/i.test(r2)  && p2) { cdepth--; if (!cdepth) break; j += 3; continue; }
           }
@@ -538,19 +538,46 @@ function stripTrailingCmts(tok) {
     cmts:  m[0].match(/«CMT\d+»/gu) || []
   };
 }
-function formatSQL(raw, indentSize, commaPos) {
+function formatSQL(raw, indentSize, commaPos, dialect) {
+  dialect = dialect || 'Generic SQL';
   try {
     const PAD = ' '.repeat(indentSize);
 
     // 1. Normalise line endings
     let s = raw.replace(/\r\n/g,'\n').replace(/\r/g,'\n');
 
-    // 2. Protect single-line comments FIRST — before any keyword processing.
-    //    This makes keywords inside comments invisible to the rest of the pipeline.
+    // 2. Protect string literals BEFORE comments so comment characters
+    //    (--, #, /*) inside a string don't get mis-classified as comments.
+    const strings = [];
+    s = s.replace(/'(?:''|[^'])*'/g, m => {
+      strings.push(m);
+      return `§${strings.length-1}§`;
+    });
+
+    // 3. Protect comments. Block /* … */ first (a -- inside /* */ stays inside).
+    //    Block comments that span multiple lines OR sit on their own source line
+    //    get padded with spaces so the later whitespace-collapse step treats them
+    //    as ordinary placeholder tokens that the per-clause comment-extraction
+    //    logic can then peel onto their own output lines.
     const comments = [];
+    s = s.replace(/\/\*[\s\S]*?\*\//g, (m, off) => {
+      comments.push(m);
+      const id = `«CMT${comments.length-1}»`;
+      const lineStart = s.lastIndexOf('\n', off - 1) + 1;
+      const beforeOnLine = s.slice(lineStart, off);
+      const onOwnLine = m.includes('\n') || /^\s*$/.test(beforeOnLine);
+      return onOwnLine ? ` ${id} ` : id;
+    });
     s = s.replace(/--[^\n]*/g, m => {
       comments.push(m);
-      return `«CMT${comments.length-1}»`;   // «CMTn»
+      return `«CMT${comments.length-1}»`;
+    });
+    // # line comments — MySQL, BigQuery, Hive, Snowflake all support these.
+    // PostgreSQL/SQL Server don't, but # at start of a SQL line in those
+    // dialects is a syntax error anyway, so safe to treat as a comment here.
+    s = s.replace(/#[^\n]*/g, m => {
+      comments.push(m);
+      return `«CMT${comments.length-1}»`;
     });
 
     // 3. Collapse to a single line (comment placeholders are opaque now)
@@ -571,9 +598,7 @@ function formatSQL(raw, indentSize, commaPos) {
     // 6. Space around operators (=, <, >, !, <=, >=, <>)
     s = s.replace(/\s*([=<>!]+)\s*/g,' $1 ').replace(/\s{2,}/g,' ');
 
-    // 7. Protect string literals
-    const strings = [];
-    s = s.replace(/'[^']*'/g, m => { strings.push(m); return `§${strings.length-1}§`; });
+    // (strings already protected at the top of the pipeline)
 
     const outLines = [];
 
@@ -667,8 +692,11 @@ function formatSQL(raw, indentSize, commaPos) {
           // Real column — comma based on position.
           // If there are comment-only items AFTER the last real column (commented-out
           // columns), preserve the trailing comma so intent is clear.
-          const hasCommentsAfter = lastRealIdx < cols.length - 1;
-          const isLast = idx === lastRealIdx && !hasCommentsAfter && trailingCmts.length === 0;
+          // The "last" column is the last column with real SQL content,
+          // ignoring any comment-only items that follow. This is what determines
+          // trailing-comma suppression — comments after the last real column
+          // must not cause a comma to be emitted on it (would produce invalid SQL).
+          const isLast = idx === lastRealIdx;
 
           // Route through CASE expander (also handles plain columns unchanged)
           const expanded = renderExprWithCase(remaining, PAD, indentSize, commaPos);
@@ -840,12 +868,50 @@ function formatSQL(raw, indentSize, commaPos) {
       } else if (/^(GROUP BY|ORDER BY)/.test(tok)) {
         const m = tok.match(/^(GROUP BY|ORDER BY)\s*/);
         outLines.push(m[1]);
-        splitByCommaDepth0(tok.slice(m[0].length)).forEach((col, idx, arr) => {
-          col = col.trim();
-          const isLast = idx===arr.length-1;
-          outLines.push(commaPos==='after'
-            ? PAD+col+(isLast?'':',')
-            : PAD+(idx===0?'  ':' ,')+col);
+        const items = splitByCommaDepth0(tok.slice(m[0].length))
+          .map(c => c.trim()).filter(Boolean);
+
+        // Last "real" item ignores trailing comment-only entries — comma
+        // suppression on the last real column is essential for valid SQL.
+        const CMT_ONLY = /^(«CMT\d+»\s*)+$/u;
+        let lastReal = items.length - 1;
+        for (let k = items.length - 1; k >= 0; k--) {
+          if (!CMT_ONLY.test(items[k])) { lastReal = k; break; }
+        }
+
+        items.forEach((col, idx) => {
+          // Pure comment-only item — push placeholders on their own indented lines
+          if (CMT_ONLY.test(col)) {
+            (col.match(/«CMT\d+»/gu) || []).forEach(t => outLines.push(PAD + t));
+            return;
+          }
+
+          // Pull leading comment placeholders off
+          let remaining = col;
+          const lead = [];
+          let lm;
+          while ((lm = remaining.match(/^(«CMT\d+»)\s*/u))) {
+            lead.push(lm[1]); remaining = remaining.slice(lm[0].length);
+          }
+          lead.forEach(t => outLines.push(PAD + t));
+
+          // Pull trailing comment placeholders off
+          const trail = [];
+          const tm = remaining.match(/(\s+«CMT\d+»)+$/u);
+          if (tm) {
+            (tm[0].match(/«CMT\d+»/gu) || []).forEach(t => trail.push(t));
+            remaining = remaining.slice(0, remaining.length - tm[0].length).trim();
+          }
+          if (!remaining.trim()) {
+            trail.forEach(t => outLines.push(PAD + t));
+            return;
+          }
+
+          const isLast = idx === lastReal;
+          outLines.push(commaPos === 'after'
+            ? PAD + remaining + (isLast ? '' : ',')
+            : PAD + (idx === 0 ? '  ' : ', ') + remaining);
+          trail.forEach(t => outLines.push(PAD + t));
         });
 
       } else {
@@ -865,7 +931,23 @@ function formatSQL(raw, indentSize, commaPos) {
       result = result.replace(new RegExp(`§${i}§`,'g'), str);
     });
     comments.forEach((cmt, i) => {
-      result = result.replace(`«CMT${i}»`, cmt);
+      const placeholder = `«CMT${i}»`;
+      // For multi-line /* … */ block comments, re-indent continuation lines
+      // to match the column where the placeholder appears in the formatted output.
+      if (cmt.includes('\n')) {
+        const lineStart = result.lastIndexOf('\n', result.indexOf(placeholder)) + 1;
+        const phPos     = result.indexOf(placeholder);
+        const indent    = ' '.repeat(phPos - lineStart);
+        // Split into lines, trim each interior line, then re-indent
+        const lines = cmt.split('\n');
+        const reindented = lines.map((ln, k) => {
+          if (k === 0) return ln.trimEnd();
+          return indent + ln.trim();
+        }).join('\n');
+        result = result.replace(placeholder, reindented);
+      } else {
+        result = result.replace(placeholder, cmt);
+      }
     });
 
     return { formatted: result, error: null };
@@ -933,7 +1015,16 @@ function hl(sql) {
       i = j + 1;
       continue;
     }
-    // Comment: collect from -- to end of line (no keyword highlighting inside)
+    // Block comment: /* … */ (may span multiple lines)
+    if (text[i] === '/' && text[i + 1] === '*') {
+      var j = text.indexOf('*/', i + 2);
+      if (j === -1) j = text.length;
+      else j += 2;
+      result += '<span class="cmt">' + text.slice(i, j) + '</span>';
+      i = j;
+      continue;
+    }
+    // Line comment: -- to end of line
     if (text[i] === '-' && text[i + 1] === '-') {
       var j = text.indexOf('\n', i);
       if (j === -1) j = text.length;
@@ -941,11 +1032,21 @@ function hl(sql) {
       i = j;
       continue;
     }
-    // Code segment: collect until next ' or --
+    // Line comment: # to end of line (MySQL / BigQuery / Hive / Snowflake)
+    if (text[i] === '#') {
+      var j = text.indexOf('\n', i);
+      if (j === -1) j = text.length;
+      result += '<span class="cmt">' + text.slice(i, j) + '</span>';
+      i = j;
+      continue;
+    }
+    // Code segment: collect until next string, -- comment, # comment, or /* comment
     var j = i;
     while (j < text.length &&
            text[j] !== "'" &&
-           !(text[j] === '-' && text[j + 1] === '-')) j++;
+           text[j] !== '#' &&
+           !(text[j] === '-' && text[j + 1] === '-') &&
+           !(text[j] === '/' && text[j + 1] === '*')) j++;
     if (j > i) {
       result += hlCode(text.slice(i, j));
       i = j;
@@ -1014,15 +1115,24 @@ function doFormat() {
   var dialectSel = document.getElementById('dialect').value;
   var comma      = document.getElementById('commas').value;
   var indent     = parseInt(document.getElementById('indent').value);
-  var dialect    = dialectSel === 'auto' ? detectDialect(raw) : dialectSel;
+  var isAuto     = dialectSel === 'auto';
+  var detected   = detectDialect(raw);
+  var dialect    = isAuto ? detected : dialectSel;
 
-  var result = formatSQL(raw, indent, comma);
+  var result = formatSQL(raw, indent, comma, dialect);
   if (result.error) {
     errEl.textContent = 'Error: ' + result.error;
     errEl.style.display = 'block';
     return;
   }
-  lastPlain = '-- Dialect: ' + dialect + '\n' + result.formatted;
+  // Header now reflects whether dialect was auto-detected or manually selected,
+  // and surfaces the detection result alongside.
+  var headerLine = isAuto
+    ? '-- Dialect: ' + dialect + '  (auto-detected)'
+    : (dialect === detected
+        ? '-- Dialect: ' + dialect + '  (selected; auto-detect agrees)'
+        : '-- Dialect: ' + dialect + '  (selected; auto-detect would have chosen: ' + detected + ')');
+  lastPlain = headerLine + '\n' + result.formatted;
 
   var outEl = document.getElementById('out');
   outEl.innerHTML = hl(lastPlain);
@@ -1032,7 +1142,7 @@ function doFormat() {
   document.getElementById('badge').textContent = 'Formatted';
   document.getElementById('badge').className   = 'badge b-ok';
   var pill = document.getElementById('dialect-pill');
-  pill.textContent = dialect;
+  pill.textContent = isAuto ? (dialect + ' (auto)') : dialect;
   pill.style.display = 'inline-block';
 
   var linesB   = raw.split('\n').length;
