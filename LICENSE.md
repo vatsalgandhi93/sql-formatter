@@ -37,4 +37,5 @@ This software is provided "as is", without warranty of any kind, express or impl
 
 For permissions beyond the scope of this license — including commercial use, collaborations, or any other inquiries — please reach out directly:
 
-- 📧 [vatsalgandhi93@gmail.com](mail
+- 📧 [vatsalgandhi93@gmail.com](mailto:vatsalgandhi93@gmail.com)
+- 💼 [linkedin.com/in/vatsalgandhi93](https://www.linkedin.com/in/vatsalgandhi93)
