@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>SQL Dialect Formatter v1.26.0 — EigenZ Solutions LLC</title>
+<title>SQL Dialect Formatter v1.28.0 — EigenZ Solutions LLC</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
 <style>
@@ -229,7 +229,7 @@ footer{padding:14px 24px;border-top:1px solid var(--border);display:flex;align-i
 </main>
 
 <footer>
-  <div class="fcopy">&copy; 2026 EigenZ Solutions LLC. &nbsp;<span style="color:var(--accent);font-family:var(--font-code);font-size:10px">v1.26.0</span> SQL Dialect Formatter by EigenZ Solutions LLC. All rights reserved.</div>
+  <div class="fcopy">&copy; 2026 EigenZ Solutions LLC. &nbsp;<span style="color:var(--accent);font-family:var(--font-code);font-size:10px">v1.28.0</span> SQL Dialect Formatter by EigenZ Solutions LLC. All rights reserved.</div>
   <div class="flinks">
     <a href="#">Documentation</a>
     <a href="#">VS Code Extension</a>
@@ -309,7 +309,27 @@ function upcase(s) {
 
     // ── Other commonly used ─────────────────────────────────────────────────
     'EXPLODE','COLLECT_LIST','COLLECT_SET','HASH','MD5','SHA1','SHA256','SHA512',
-    'FARM_FINGERPRINT','GENERATE_UUID','UUID'
+    'FARM_FINGERPRINT','GENERATE_UUID','UUID',
+
+    // ── Procedural / control flow / transactions ────────────────────────────
+    'BEGIN TRANSACTION','BEGIN TRY','BEGIN CATCH','BEGIN','END TRY','END CATCH','END',
+    'COMMIT TRANSACTION','COMMIT WORK','COMMIT','ROLLBACK TRANSACTION','ROLLBACK WORK','ROLLBACK',
+    'SAVEPOINT','RELEASE SAVEPOINT','START TRANSACTION','TRANSACTION ISOLATION LEVEL',
+    'DECLARE','SET','RESET','PRINT','RETURN',
+    'IF NOT EXISTS','IF EXISTS','IF','ELSEIF','ELSIF','ELSE IF','ELSE','END IF','THEN','ENDIF',
+    'CASE','WHEN','END CASE',
+    'WHILE','DO','LOOP','REPEAT','UNTIL','LEAVE','ITERATE','CONTINUE','BREAK',
+    'END WHILE','END LOOP','END REPEAT','END FOR','FOR','IN','OUT','INOUT',
+    'CURSOR','OPEN','FETCH','CLOSE','FETCH NEXT','FETCH PRIOR','FETCH FIRST','FETCH LAST',
+    'CALL','PERFORM','EXEC','EXECUTE','EXECUTE IMMEDIATE',
+    'CREATE PROCEDURE','CREATE OR REPLACE PROCEDURE','DROP PROCEDURE','ALTER PROCEDURE',
+    'CREATE FUNCTION','CREATE OR REPLACE FUNCTION','DROP FUNCTION','ALTER FUNCTION',
+    'CREATE TRIGGER','CREATE OR REPLACE TRIGGER','DROP TRIGGER','ALTER TRIGGER',
+    'BEFORE','AFTER','INSTEAD OF','EACH ROW','EACH STATEMENT',
+    'LANGUAGE','RETURNS','VOLATILE','IMMUTABLE','STABLE','DETERMINISTIC','NOT DETERMINISTIC',
+    'SECURITY DEFINER','SECURITY INVOKER','SQL SECURITY',
+    'USE','SHOW','DESCRIBE','DESC','EXPLAIN','EXPLAIN ANALYZE','EXPLAIN PLAN',
+    'LOCK TABLE','LOCK TABLES','UNLOCK TABLES'
   ];
   KWS.forEach(kw => {
     s = s.replace(new RegExp('\\b' + kw.replace(/ /g,'\\s+') + '\\b','gi'), kw);
@@ -656,6 +676,677 @@ function stripTrailingCmts(tok) {
 
 // Basic DDL formatter — handles CREATE TABLE column lists, otherwise pretty-prints
 // top-level keywords. Goal: make DDL readable without breaking syntax.
+// ── DML formatter ────────────────────────────────────────────────────────────
+// Handles INSERT, UPDATE, DELETE, MERGE statements. Each clause keyword
+// (INSERT INTO, VALUES, SELECT, UPDATE, SET, WHERE, RETURNING, USING,
+// WHEN MATCHED, WHEN NOT MATCHED) goes on its own line.
+function formatDML(raw, indentSize, commaPos, dialect) {
+  commaPos = commaPos || 'after';
+  dialect  = dialect  || 'Generic SQL';
+  const PAD = ' '.repeat(indentSize);
+
+  // Single-pass tokenize strings + comments
+  const { stripped, strings, comments } = protectLiteralsAndComments(raw, { padBlockComments: true });
+  let s = stripped.replace(/\s+/g, ' ').trim();
+
+  // Peel leading comment placeholders to emit as header lines
+  const headerCmts = [];
+  let lm;
+  while ((lm = s.match(/^(«CMT\d+»)\s*/))) {
+    headerCmts.push(lm[1]);
+    s = s.slice(lm[0].length);
+  }
+
+  // Uppercase DML + supporting keywords
+  const DML_KWS = [
+    'INSERT INTO','INSERT OVERWRITE','INSERT','UPDATE','DELETE FROM','DELETE',
+    'MERGE INTO','MERGE','UPSERT','REPLACE INTO','REPLACE',
+    'VALUES','SET','WHERE','FROM','USING','RETURNING','OUTPUT','OVERWRITE',
+    'WHEN MATCHED','WHEN NOT MATCHED BY SOURCE','WHEN NOT MATCHED BY TARGET','WHEN NOT MATCHED',
+    'AND MATCHED','AND NOT MATCHED','THEN','UPDATE SET','INSERT','DO NOTHING','DO UPDATE',
+    'ON CONFLICT','ON DUPLICATE KEY UPDATE',
+    'SELECT','WITH','AS','DISTINCT','GROUP BY','HAVING','ORDER BY','LIMIT','OFFSET',
+    'AND','OR','NOT','IN','NOT IN','EXISTS','BETWEEN','IS NOT NULL','IS NULL','LIKE','ILIKE',
+    'TRUE','FALSE','NULL','ASC','DESC','CASE','WHEN','THEN','ELSE','END',
+    'INNER JOIN','LEFT JOIN','RIGHT JOIN','FULL JOIN','CROSS JOIN','JOIN','ON',
+    'COALESCE','NULLIF','CAST','TRIM','LOWER','UPPER','CONCAT','NOW','CURRENT_TIMESTAMP','CURRENT_DATE',
+    'COUNT','SUM','AVG','MIN','MAX'
+  ];
+  DML_KWS.forEach(kw => {
+    s = s.replace(new RegExp('\\b' + kw.replace(/ /g, '\\s+') + '\\b', 'gi'), kw);
+  });
+
+  // Operator spacing — same protection pattern as formatStatement so '->' / '=>' survive
+  s = s.replace(/->/g, '«ARROW_LAMBDA»').replace(/=>/g, '«ARROW_NAMEDARG»');
+  s = s.replace(/\s*([=<>!]+)\s*/g, ' $1 ').replace(/\s{2,}/g, ' ');
+  s = s.replace(/«ARROW_LAMBDA»/g, '->').replace(/«ARROW_NAMEDARG»/g, '=>');
+
+  // Detect statement kind and dispatch
+  const lines = [];
+
+  if (/^INSERT\s+(INTO|OVERWRITE)/i.test(s)) {
+    lines.push(...formatInsert(s, indentSize, commaPos, dialect));
+  } else if (/^UPDATE\s/i.test(s)) {
+    lines.push(...formatUpdate(s, indentSize, commaPos, dialect));
+  } else if (/^DELETE/i.test(s)) {
+    lines.push(...formatDelete(s, indentSize, commaPos, dialect));
+  } else if (/^MERGE\s/i.test(s)) {
+    lines.push(...formatMerge(s, indentSize, commaPos, dialect));
+  } else if (/^(UPSERT|REPLACE)/i.test(s)) {
+    lines.push(...formatInsert(s, indentSize, commaPos, dialect));
+  } else {
+    lines.push(s);
+  }
+
+  let result = (headerCmts.length ? headerCmts.join('\n') + '\n' : '') + lines.join('\n');
+  // Restore strings + comments (using functions to avoid $-special replacement)
+  strings.forEach((str, i) => {
+    result = result.replace(new RegExp('§' + i + '§', 'g'), () => str);
+  });
+  comments.forEach((cmt, i) => {
+    result = result.replace('«CMT' + i + '»', () => cmt);
+  });
+  return result;
+}
+
+// INSERT INTO table [(cols)] VALUES (v1), (v2)  OR  INSERT INTO table [(cols)] SELECT …
+function formatInsert(s, indentSize, commaPos, dialect) {
+  const PAD = ' '.repeat(indentSize);
+  const lines = [];
+
+  // INSERT INTO|OVERWRITE [tablename] [(col, col, ...)]  [VALUES ... | SELECT ... | DEFAULT VALUES]
+  const head = s.match(/^(INSERT\s+(?:INTO|OVERWRITE)|UPSERT(?:\s+INTO)?|REPLACE(?:\s+INTO)?)\s+([^\s(]+)/i);
+  if (!head) { lines.push(s); return lines; }
+  let pos = head[0].length;
+  let colList = '';
+  // Optional column list ( col, col, ... )
+  while (s[pos] === ' ') pos++;
+  if (s[pos] === '(') {
+    const close = findMatchingParen(s, pos);
+    if (close > pos) {
+      colList = s.slice(pos, close + 1);  // includes parens
+      pos = close + 1;
+    }
+  }
+  while (s[pos] === ' ') pos++;
+  const rest = s.slice(pos).trim();
+
+  lines.push(head[1] + ' ' + head[2] + (colList ? ' ' + colList : ''));
+
+  // Distinguish VALUES vs SELECT vs DEFAULT VALUES
+  if (/^VALUES\b/i.test(rest)) {
+    const values = rest.slice(6).trim();  // after "VALUES"
+    // Split into tuples (..), (..)  at depth 0
+    const tuples = splitTopLevelCommas(values).map(t => t.trim()).filter(Boolean);
+    lines.push('VALUES');
+    tuples.forEach((t, i) => {
+      lines.push(PAD + t + (i === tuples.length - 1 ? '' : ','));
+    });
+  } else if (/^SELECT\b/i.test(rest) || /^WITH\b/i.test(rest)) {
+    // Delegate query body to formatStatement
+    const formatted = formatEmbeddedQuery(rest, null, null, indentSize, commaPos, dialect);
+    lines.push(formatted);
+  } else if (/^DEFAULT\s+VALUES\b/i.test(rest)) {
+    lines.push('DEFAULT VALUES');
+  } else if (rest) {
+    lines.push(rest);
+  }
+
+  // Trailing semicolon handling — attach to last line if it ends with ;
+  return absorbTrailingSemi(lines);
+}
+
+// UPDATE table SET col=val, col=val [WHERE …] [RETURNING …]
+function formatUpdate(s, indentSize, commaPos, dialect) {
+  const PAD = ' '.repeat(indentSize);
+  const lines = [];
+  const head = s.match(/^UPDATE\s+([^\s]+)/i);
+  if (!head) { lines.push(s); return lines; }
+  lines.push('UPDATE ' + head[1]);
+
+  let rest = s.slice(head[0].length).trim();
+
+  // Split off optional FROM <source> (Postgres / SQL Server / Snowflake)
+  // SET clause: each assignment on its own line
+  if (/^SET\b/i.test(rest)) {
+    let setBody = rest.slice(3).trim();
+    // Find next top-level clause keyword (WHERE / FROM / RETURNING / ;)
+    const clauseRe = /\b(WHERE|FROM|RETURNING|OUTPUT)\b/i;
+    let bodyEnd = setBody.length;
+    let depth = 0;
+    for (let i = 0; i < setBody.length; i++) {
+      if (setBody[i] === '(') { depth++; continue; }
+      if (setBody[i] === ')') { depth--; continue; }
+      if (depth === 0) {
+        const m = setBody.slice(i).match(clauseRe);
+        if (m && m.index === 0) { bodyEnd = i; break; }
+      }
+    }
+    const setPart = setBody.slice(0, bodyEnd).trim();
+    rest = setBody.slice(bodyEnd).trim();
+    const assignments = splitTopLevelCommas(setPart).map(a => a.trim()).filter(Boolean);
+    lines.push('SET');
+    assignments.forEach((a, i) => {
+      lines.push(PAD + a + (i === assignments.length - 1 ? '' : ','));
+    });
+  }
+
+  // FROM (for UPDATE ... FROM <source>)
+  if (/^FROM\b/i.test(rest)) {
+    const fromMatch = rest.match(/^FROM\s+([^]*?)(?=\b(WHERE|RETURNING|OUTPUT)\b|$)/i);
+    if (fromMatch) {
+      lines.push('FROM ' + fromMatch[1].trim());
+      rest = rest.slice(fromMatch[0].length).trim();
+    }
+  }
+
+  // WHERE — split by AND/OR
+  if (/^WHERE\b/i.test(rest)) {
+    let wherePart = rest.slice(5).trim();
+    const tailRe = /\b(RETURNING|OUTPUT)\b/i;
+    let wEnd = wherePart.length;
+    let depth = 0;
+    for (let i = 0; i < wherePart.length; i++) {
+      if (wherePart[i] === '(') { depth++; continue; }
+      if (wherePart[i] === ')') { depth--; continue; }
+      if (depth === 0) {
+        const m = wherePart.slice(i).match(tailRe);
+        if (m && m.index === 0) { wEnd = i; break; }
+      }
+    }
+    const whereBody = wherePart.slice(0, wEnd).trim();
+    rest = wherePart.slice(wEnd).trim();
+    const conds = splitByAndOrDepth0(whereBody);
+    lines.push('WHERE');
+    conds.forEach(c => {
+      if (c.trim()) lines.push(PAD + c.trim());
+    });
+  }
+
+  // RETURNING / OUTPUT
+  if (/^(RETURNING|OUTPUT)\b/i.test(rest)) {
+    const m = rest.match(/^(RETURNING|OUTPUT)\s+(.*)$/i);
+    if (m) {
+      const cols = splitTopLevelCommas(m[2].replace(/;$/, '').trim());
+      lines.push(m[1].toUpperCase());
+      cols.forEach((c, i) => {
+        lines.push(PAD + c.trim() + (i === cols.length - 1 ? '' : ','));
+      });
+      rest = '';
+    }
+  }
+  if (rest) lines.push(rest);
+  return absorbTrailingSemi(lines);
+}
+
+// DELETE [FROM] table [USING …] [WHERE …]
+function formatDelete(s, indentSize, commaPos, dialect) {
+  const PAD = ' '.repeat(indentSize);
+  const lines = [];
+  // Normalize: ensure DELETE FROM (some dialects allow DELETE table)
+  let head;
+  if (/^DELETE\s+FROM\s+/i.test(s)) {
+    head = s.match(/^DELETE\s+FROM\s+([^\s]+)/i);
+    lines.push('DELETE FROM ' + head[1]);
+  } else if (/^DELETE\s+([^\s]+)/i.test(s)) {
+    head = s.match(/^DELETE\s+([^\s]+)/i);
+    lines.push('DELETE FROM ' + head[1]);
+  } else {
+    lines.push(s); return lines;
+  }
+  let rest = s.slice(head[0].length).trim();
+
+  // USING (Postgres) — keep on its own line
+  if (/^USING\b/i.test(rest)) {
+    const m = rest.match(/^USING\s+([^]*?)(?=\b(WHERE|RETURNING|OUTPUT)\b|$)/i);
+    if (m) {
+      lines.push('USING ' + m[1].trim());
+      rest = rest.slice(m[0].length).trim();
+    }
+  }
+
+  if (/^WHERE\b/i.test(rest)) {
+    let wherePart = rest.slice(5).trim();
+    const tailRe = /\b(RETURNING|OUTPUT)\b/i;
+    let wEnd = wherePart.length;
+    let depth = 0;
+    for (let i = 0; i < wherePart.length; i++) {
+      if (wherePart[i] === '(') { depth++; continue; }
+      if (wherePart[i] === ')') { depth--; continue; }
+      if (depth === 0) {
+        const m = wherePart.slice(i).match(tailRe);
+        if (m && m.index === 0) { wEnd = i; break; }
+      }
+    }
+    const whereBody = wherePart.slice(0, wEnd).trim();
+    rest = wherePart.slice(wEnd).trim();
+    const conds = splitByAndOrDepth0(whereBody);
+    lines.push('WHERE');
+    conds.forEach(c => {
+      if (c.trim()) lines.push(PAD + c.trim());
+    });
+  }
+
+  if (/^(RETURNING|OUTPUT)\b/i.test(rest)) {
+    const m = rest.match(/^(RETURNING|OUTPUT)\s+(.*)$/i);
+    if (m) {
+      const cols = splitTopLevelCommas(m[2].replace(/;$/, '').trim());
+      lines.push(m[1].toUpperCase());
+      cols.forEach((c, i) => {
+        lines.push(PAD + c.trim() + (i === cols.length - 1 ? '' : ','));
+      });
+      rest = '';
+    }
+  }
+  if (rest) lines.push(rest);
+  return absorbTrailingSemi(lines);
+}
+
+// MERGE INTO target [t] USING source [s] ON <cond>
+//   WHEN MATCHED [AND cond] THEN UPDATE SET ... | DELETE
+//   WHEN NOT MATCHED [BY TARGET|SOURCE] [AND cond] THEN INSERT (...) VALUES (...)
+function formatMerge(s, indentSize, commaPos, dialect) {
+  const PAD = ' '.repeat(indentSize);
+  const lines = [];
+  // Capture target (table name) and an optional alias that isn't a keyword
+  const head = s.match(/^MERGE\s+INTO\s+([^\s]+)(?:\s+(?!USING\b)(\w+))?/i);
+  if (!head) { lines.push(s); return lines; }
+  lines.push('MERGE INTO ' + head[1] + (head[2] ? ' ' + head[2] : ''));
+
+  let rest = s.slice(head[0].length).trim();
+
+  // USING
+  const usingMatch = rest.match(/^USING\s+([^]*?)(?=\bON\b)/i);
+  if (usingMatch) {
+    lines.push('USING ' + usingMatch[1].trim());
+    rest = rest.slice(usingMatch[0].length).trim();
+  }
+
+  // ON
+  const onMatch = rest.match(/^ON\s+([^]*?)(?=\bWHEN\s+(NOT\s+)?MATCHED\b|$)/i);
+  if (onMatch) {
+    lines.push(PAD + 'ON ' + onMatch[1].trim());
+    rest = rest.slice(onMatch[0].length).trim();
+  }
+
+  // Each WHEN ... THEN ... clause
+  // Split on top-level WHEN keyword
+  const whenParts = [];
+  let cur = '', depth = 0;
+  let i = 0;
+  while (i < rest.length) {
+    if (rest[i] === '(') { depth++; cur += rest[i++]; continue; }
+    if (rest[i] === ')') { depth--; cur += rest[i++]; continue; }
+    if (depth === 0 && /^WHEN\b/i.test(rest.slice(i)) &&
+        (i === 0 || !/[A-Za-z0-9_]/.test(rest[i-1]))) {
+      if (cur.trim()) whenParts.push(cur.trim());
+      cur = 'WHEN'; i += 4;
+      if (rest[i] === ' ') { cur += ' '; i++; }
+      continue;
+    }
+    cur += rest[i++];
+  }
+  if (cur.trim()) whenParts.push(cur.trim());
+
+  whenParts.forEach(w => {
+    // Split on THEN at depth 0
+    let thenIdx = -1, d = 0;
+    for (let k = 0; k < w.length; k++) {
+      if (w[k] === '(') { d++; continue; }
+      if (w[k] === ')') { d--; continue; }
+      if (d === 0 && /^THEN\b/i.test(w.slice(k)) &&
+          (k === 0 || !/[A-Za-z0-9_]/.test(w[k-1]))) {
+        thenIdx = k; break;
+      }
+    }
+    if (thenIdx === -1) { lines.push(w); return; }
+    const whenHead = w.slice(0, thenIdx).trim();
+    const thenBody = w.slice(thenIdx + 4).trim().replace(/;$/, '');
+    lines.push(whenHead);
+    lines.push(PAD + 'THEN ' + thenBody);
+  });
+
+  return absorbTrailingSemi(lines);
+}
+
+// Move a trailing ; from its own line onto the previous line
+function absorbTrailingSemi(lines) {
+  if (!lines.length) return lines;
+  const last = lines[lines.length - 1];
+  if (last === ';') {
+    lines.pop();
+    lines[lines.length - 1] += ';';
+  }
+  return lines;
+}
+
+// ── Procedural / control-flow / transaction formatter ────────────────────────
+// Handles simple statement-per-line cases like:
+//   BEGIN TRANSACTION; ... COMMIT;
+//   DECLARE x INT DEFAULT 0;
+//   SET @x = 5;
+//   IF cond THEN ... [ELSEIF cond THEN ...] [ELSE ...] END IF;
+//   WHILE cond DO ... END WHILE;
+//   OPEN cur; FETCH cur INTO x; CLOSE cur;
+//   CALL proc(args);  EXEC sp_thing args;
+//   USE db;  EXPLAIN <query>;  SHOW <thing>;
+function formatProcedural(raw, indentSize, commaPos, dialect) {
+  commaPos = commaPos || 'after';
+  dialect  = dialect  || 'Generic SQL';
+  const PAD = ' '.repeat(indentSize);
+
+  const { stripped, strings, comments } = protectLiteralsAndComments(raw, { padBlockComments: true });
+  let s = stripped.replace(/\s+/g, ' ').trim();
+
+  // Strip header comments
+  const headerCmts = [];
+  let lm;
+  while ((lm = s.match(/^(«CMT\d+»)\s*/))) {
+    headerCmts.push(lm[1]);
+    s = s.slice(lm[0].length);
+  }
+
+  // Uppercase keywords (reuse the full upcase from formatStatement)
+  s = upcase(s);
+
+  // Apply operator spacing — protect arrow tokens first
+  s = s.replace(/->/g, '«ARROW_LAMBDA»').replace(/=>/g, '«ARROW_NAMEDARG»');
+  s = s.replace(/\s*([=<>!]+)\s*/g, ' $1 ').replace(/\s{2,}/g, ' ');
+  s = s.replace(/«ARROW_LAMBDA»/g, '->').replace(/«ARROW_NAMEDARG»/g, '=>');
+
+  const lines = [];
+  const head = s.match(/^([A-Z][A-Z\s]*?)(?=\s|$|\()/);
+
+  // EXPLAIN ... <query> — emit EXPLAIN on its own line then delegate the query
+  if (/^EXPLAIN\b/i.test(s)) {
+    const m = s.match(/^(EXPLAIN(?:\s+(?:ANALYZE|VERBOSE|PLAN|FORMAT\s+\w+))?)\s+(.*)$/i);
+    if (m) {
+      lines.push(m[1].toUpperCase());
+      const body = m[2].trim().replace(/;$/, '');
+      lines.push(formatEmbeddedQuery(body, null, null, indentSize, commaPos, dialect));
+      return assemble(lines, headerCmts, strings, comments);
+    }
+  }
+
+  // IF cond THEN stmt [ELSEIF cond THEN stmt] [ELSE stmt] END IF
+  if (/^IF\b/i.test(s)) {
+    return assemble(formatIfBlock(s, indentSize, commaPos, dialect), headerCmts, strings, comments);
+  }
+
+  // WHILE cond DO stmt; ... END WHILE
+  if (/^WHILE\b/i.test(s)) {
+    return assemble(formatWhileBlock(s, indentSize, commaPos, dialect), headerCmts, strings, comments);
+  }
+
+  // BEGIN ... END  (transaction or block)
+  if (/^BEGIN\b/i.test(s)) {
+    return assemble(formatBeginBlock(s, indentSize, commaPos, dialect), headerCmts, strings, comments);
+  }
+
+  // Simple line-oriented statements (DECLARE/SET/COMMIT/ROLLBACK/USE/etc.):
+  // Just push as one line. Operator spacing already applied.
+  lines.push(s);
+  return assemble(lines, headerCmts, strings, comments);
+}
+
+function formatIfBlock(s, indentSize, commaPos, dialect) {
+  const PAD = ' '.repeat(indentSize);
+  const lines = [];
+
+  // Cleanup trailing semi from the whole thing
+  s = s.replace(/;\s*$/, '');
+
+  // Strategy: find the END IF first, then parse the structure between IF and END IF.
+  const endIfMatch = s.match(/\bEND\s+IF\b\s*$/i);
+  if (!endIfMatch) { lines.push(s); return lines; }
+  const body = s.slice(0, endIfMatch.index).trim();
+
+  // Now body looks like: IF cond1 THEN stmts1 [ELSEIF cond2 THEN stmts2]* [ELSE stmtsN]
+  // Split on top-level (depth 0) ELSEIF/ELSIF/ELSE (but NOT ELSE inside CASE).
+  // Each branch has a head ("IF cond" or "ELSEIF cond" or "ELSE") and body statements.
+
+  // First split on ELSE / ELSEIF / ELSIF at depth 0
+  const branchStarts = [];
+  let depth = 0;
+  for (let i = 0; i < body.length; i++) {
+    if (body[i] === '(') { depth++; continue; }
+    if (body[i] === ')') { depth--; continue; }
+    if (depth !== 0) continue;
+    if (i > 0 && /[A-Za-z0-9_]/.test(body[i-1])) continue;
+    const rest = body.slice(i);
+    let m;
+    if ((m = rest.match(/^(ELSEIF|ELSIF|ELSE\s+IF)\b/i))) {
+      branchStarts.push({ index: i, len: m[0].length, kw: 'ELSEIF' });
+    } else if ((m = rest.match(/^ELSE\b/i))) {
+      branchStarts.push({ index: i, len: m[0].length, kw: 'ELSE' });
+    }
+  }
+
+  // Build branches. First branch's text starts with literal "IF " — strip it
+  // since we add the keyword back when rendering.
+  const branches = [];
+  let segStart = 0;
+  let segKw = 'IF';
+  branchStarts.forEach(b => {
+    branches.push({ kw: segKw, text: body.slice(segStart, b.index).trim() });
+    segStart = b.index + b.len;
+    segKw = b.kw;
+  });
+  branches.push({ kw: segKw, text: body.slice(segStart).trim() });
+
+  // Strip the leading "IF " from the first branch (kw === 'IF') since it
+  // came from the input and we'll add it back during rendering.
+  if (branches[0] && /^IF\s+/i.test(branches[0].text)) {
+    branches[0].text = branches[0].text.replace(/^IF\s+/i, '');
+  }
+
+  // Render each branch
+  branches.forEach(b => {
+    if (b.kw === 'IF' || b.kw === 'ELSEIF') {
+      // Branch text looks like: "cond THEN stmts"
+      const thenMatch = b.text.match(/^([^]*?)\bTHEN\b\s*([^]*)$/i);
+      if (thenMatch) {
+        const cond = thenMatch[1].trim();
+        const stmts = thenMatch[2].trim();
+        lines.push(b.kw + ' ' + cond + ' THEN');
+        splitInnerStatements(stmts).forEach(stmt => {
+          const trimmed = stmt.trim();
+          if (!trimmed) return;
+          const r = formatStatement(trimmed, indentSize, commaPos, dialect);
+          const formatted = (r.error ? trimmed : r.formatted) + ';';
+          formatted.split('\n').forEach(ln => lines.push(PAD + ln));
+        });
+      } else {
+        lines.push(b.kw + ' ' + b.text);
+      }
+    } else if (b.kw === 'ELSE') {
+      lines.push('ELSE');
+      splitInnerStatements(b.text).forEach(stmt => {
+        const trimmed = stmt.trim();
+        if (!trimmed) return;
+        const r = formatStatement(trimmed, indentSize, commaPos, dialect);
+        const formatted = (r.error ? trimmed : r.formatted) + ';';
+        formatted.split('\n').forEach(ln => lines.push(PAD + ln));
+      });
+    }
+  });
+
+  lines.push('END IF');
+  return lines;
+}
+
+function formatWhileBlock(s, indentSize, commaPos, dialect) {
+  const PAD = ' '.repeat(indentSize);
+  const lines = [];
+  // WHILE cond DO body END WHILE
+  const m = s.match(/^WHILE\s+([^]*?)\s+DO\s+([^]*?)\s+END\s+WHILE\s*;?\s*$/i);
+  if (!m) { lines.push(s); return lines; }
+
+  lines.push('WHILE ' + m[1].trim());
+  lines.push('DO');
+  splitInnerStatements(m[2]).forEach(stmt => {
+    const trimmed = stmt.trim();
+    if (!trimmed) return;
+    const r = formatStatement(trimmed, indentSize, commaPos, dialect);
+    const formatted = (r.error ? trimmed : r.formatted) + ';';
+    formatted.split('\n').forEach(ln => lines.push(PAD + ln));
+  });
+  lines.push('END WHILE');
+  return lines;
+}
+
+function formatBeginBlock(s, indentSize, commaPos, dialect) {
+  const PAD = ' '.repeat(indentSize);
+  const lines = [];
+
+  // BEGIN TRANSACTION / BEGIN WORK / BEGIN ATOMIC / BEGIN TRY
+  const beginMatch = s.match(/^(BEGIN(?:\s+(?:TRANSACTION|WORK|ATOMIC|TRY))?)\s*(.*)$/i);
+  if (!beginMatch) { lines.push(s); return lines; }
+
+  const head = beginMatch[1].toUpperCase();
+  const body = beginMatch[2].replace(/;$/, '').trim();
+
+  // If body is empty, simple BEGIN; (transaction start) — let outer add the ;
+  if (!body) {
+    lines.push(head);
+    return lines;
+  }
+
+  // Find the trailing END at depth-0 (paren-and-block-aware), supporting
+  // END / END TRY / END CATCH variants.
+  const endRe = /\b(END(?:\s+(?:TRY|CATCH))?)\b/gi;
+  let endMatch = null, depth = 0, m;
+  for (m = null; (m = endRe.exec(body)) !== null; ) {
+    // Make sure this END is at depth 0 of any inner blocks
+    const before = body.slice(0, m.index);
+    // Count opener/closer keywords in 'before' (very rough — block tracking is hard)
+    // For now we just take the LAST occurrence of END as the closer.
+    endMatch = m;
+  }
+
+  if (!endMatch) { lines.push(s); return lines; }
+
+  const inner = body.slice(0, endMatch.index).trim();
+  const endKw = endMatch[1].toUpperCase();
+  const tail  = body.slice(endMatch.index + endMatch[0].length).trim();
+
+  lines.push(head);
+  // Split inner by top-level ; (respecting nested blocks) and format each
+  splitInnerStatements(inner).forEach(stmt => {
+    const trimmed = stmt.trim();
+    if (!trimmed) return;
+    const r = formatStatement(trimmed, indentSize, commaPos, dialect);
+    const formatted = (r.error ? trimmed : r.formatted) + ';';
+    // Indent every line of the inner formatted statement
+    formatted.split('\n').forEach(ln => lines.push(PAD + ln));
+  });
+  lines.push(endKw + (tail ? ' ' + tail : ''));
+  return lines;
+}
+
+// Split inner block body by top-level ; — paren-AND-procedural-block-aware.
+function splitInnerStatements(s) {
+  const out = [];
+  let buf = '', i = 0, parenDepth = 0, blockDepth = 0;
+
+  function blockAt(pos) {
+    const prev = pos === 0 ? ' ' : s[pos - 1];
+    if (/[A-Za-z0-9_]/.test(prev)) return null;
+    const rest = s.slice(pos);
+    const closers = [
+      /^END\s+IF\b/i, /^END\s+WHILE\b/i, /^END\s+LOOP\b/i,
+      /^END\s+CASE\b/i, /^END\s+REPEAT\b/i, /^END\s+FOR\b/i,
+      /^END\b/i,
+    ];
+    const openers = [
+      /^BEGIN\b(?!\s+(TRANSACTION|WORK|ATOMIC|TRY|CATCH))/i,
+      /^IF\s+(?!EXISTS\b|NOT\s+EXISTS\b)/i,
+      /^WHILE\s/i, /^LOOP\b/i, /^REPEAT\b/i,
+      /^CASE\b(?!\s*[A-Z]*\s+THEN)/i,
+    ];
+    for (const re of closers) { const m = rest.match(re); if (m) return { kind: 'close', len: m[0].length }; }
+    for (const re of openers) { const m = rest.match(re); if (m) return { kind: 'open',  len: m[0].length }; }
+    return null;
+  }
+
+  while (i < s.length) {
+    const ch = s[i];
+    if (ch === "'") {
+      buf += ch; i++;
+      while (i < s.length) {
+        if (s[i] === "'" && s[i+1] === "'") { buf += "''"; i += 2; continue; }
+        if (s[i] === "'") { buf += "'"; i++; break; }
+        buf += s[i++];
+      }
+      continue;
+    }
+    if (ch === '(') { parenDepth++; buf += s[i++]; continue; }
+    if (ch === ')') { parenDepth--; buf += s[i++]; continue; }
+    if (/[A-Za-z]/.test(ch)) {
+      const kw = blockAt(i);
+      if (kw) {
+        if (kw.kind === 'open')      blockDepth++;
+        else if (blockDepth > 0)     blockDepth--;
+        buf += s.slice(i, i + kw.len);
+        i += kw.len;
+        continue;
+      }
+    }
+    if (ch === ';' && parenDepth === 0 && blockDepth === 0) {
+      out.push(buf);
+      buf = '';
+      i++;
+      continue;
+    }
+    buf += s[i++];
+  }
+  if (buf.trim()) out.push(buf);
+  return out;
+}
+
+// Walk s and split on top-level (paren-depth 0) keyword boundaries matched
+// by `re`. Returns [{ text, kw }, ...] where the first segment has kw=null
+// (it's everything before the first match) and subsequent ones have kw set.
+function splitOnKeywords(s, re) {
+  const segs = [];
+  let cur = '', curKw = null;
+  let i = 0, depth = 0;
+  while (i < s.length) {
+    if (s[i] === '(') { depth++; cur += s[i++]; continue; }
+    if (s[i] === ')') { depth--; cur += s[i++]; continue; }
+    if (depth === 0) {
+      const rem = s.slice(i);
+      const m = rem.match(re);
+      if (m && m.index === 0 && (i === 0 || !/[A-Za-z0-9_]/.test(s[i-1]))) {
+        // Boundary check: only treat as keyword if char after the match is non-identifier
+        const after = i + m[0].length;
+        const nextCh = s[after] || '';
+        if (!/[A-Za-z0-9_]/.test(nextCh)) {
+          segs.push({ text: cur, kw: curKw });
+          curKw = m[0].replace(/\s+/g, ' ').toUpperCase();
+          cur = '';
+          i = after;
+          continue;
+        }
+      }
+    }
+    cur += s[i++];
+  }
+  segs.push({ text: cur, kw: curKw });
+  return segs;
+}
+
+function assemble(lines, headerCmts, strings, comments) {
+  let result = (headerCmts.length ? headerCmts.join('\n') + '\n' : '') + lines.join('\n');
+  strings.forEach((str, i) => {
+    result = result.replace(new RegExp('§' + i + '§', 'g'), () => str);
+  });
+  comments.forEach((cmt, i) => {
+    result = result.replace('«CMT' + i + '»', () => cmt);
+  });
+  return result;
+}
+
 function formatDDL(raw, indentSize, commaPos, dialect) {
   commaPos = commaPos || 'after';
   dialect  = dialect  || 'Generic SQL';
@@ -692,7 +1383,15 @@ function formatDDL(raw, indentSize, commaPos, dialect) {
     'BACKUP','AUTO',
     'PARTITION BY','CLUSTER BY','LOCATION','STORED AS','ROW FORMAT','SERDE',
     'TBLPROPERTIES','OPTIONS','WITH','AS','GRANT','REVOKE','TO','FROM','ON','PRIVILEGES',
-    'COMMENT'
+    'COMMENT',
+    // Procedure / function / trigger DDL
+    'CREATE OR REPLACE PROCEDURE','CREATE PROCEDURE','DROP PROCEDURE','ALTER PROCEDURE',
+    'CREATE OR REPLACE FUNCTION','CREATE FUNCTION','DROP FUNCTION','ALTER FUNCTION',
+    'CREATE OR REPLACE TRIGGER','CREATE TRIGGER','DROP TRIGGER','ALTER TRIGGER',
+    'RETURNS','LANGUAGE','BEFORE','AFTER','INSTEAD OF','FOR EACH ROW','FOR EACH STATEMENT',
+    'SECURITY DEFINER','SECURITY INVOKER','VOLATILE','IMMUTABLE','STABLE',
+    'DETERMINISTIC','NOT DETERMINISTIC',
+    'IN','OUT','INOUT'
   ];
   DDL_KWS.forEach(kw => {
     s = s.replace(new RegExp('\\b' + kw.replace(/ /g,'\\s+') + '\\b','gi'), kw);
@@ -745,6 +1444,78 @@ function formatDDL(raw, indentSize, commaPos, dialect) {
     } else {
       outLines.push(s);
     }
+  } else if (/^CREATE\s+(?:OR\s+REPLACE\s+)?(?:PROCEDURE|FUNCTION|TRIGGER)\b/i.test(s)) {
+    // CREATE PROCEDURE/FUNCTION/TRIGGER — split header from body, format body with formatProcedural
+    const procMatch = s.match(/^(CREATE\s+(?:OR\s+REPLACE\s+)?(?:PROCEDURE|FUNCTION|TRIGGER)\s+[^\s(]+(?:\s*\([^]*?\))?)\s*([^]*)$/i);
+    if (procMatch) {
+      const procHead = procMatch[1];
+      let procRest = procMatch[2].trim();
+
+      // Header may contain RETURNS / LANGUAGE / AS / IS / BEFORE/AFTER/etc.
+      // Find where the body begins — look for BEGIN or $$ ... $$
+      const beginAt = procRest.search(/\bBEGIN\b/i);
+      const dollarAt = procRest.indexOf('§');  // dollar-quoted bodies are already placeholdered
+
+      let headerExtra = '', body = '';
+      if (beginAt > -1 && (dollarAt === -1 || beginAt < dollarAt)) {
+        headerExtra = procRest.slice(0, beginAt).trim();
+        body = procRest.slice(beginAt).trim();
+      } else {
+        headerExtra = procRest;
+        body = '';
+      }
+
+      outLines.push(procHead);
+      if (headerExtra) {
+        // Split header attributes onto separate lines (RETURNS, LANGUAGE, AS, etc.)
+        headerExtra
+          .replace(/\s+(RETURNS|LANGUAGE|AS|IS|BEFORE|AFTER|INSTEAD\s+OF|FOR\s+EACH|SECURITY|VOLATILE|IMMUTABLE|STABLE|DETERMINISTIC)\b/gi, '\n$1')
+          .split('\n')
+          .filter(x => x.trim())
+          .forEach(ln => outLines.push(ln.trim()));
+      }
+      if (body) {
+        const r = formatProcedural(body, indentSize, commaPos, dialect);
+        // formatProcedural returns text with restored strings/comments — but since
+        // we're inside formatDDL which will restore later, we need to RE-protect.
+        // Simpler: just push the formatted procedural result as-is. Its placeholders
+        // are already restored, so the outer DDL restore is a no-op for those.
+        r.split('\n').forEach(ln => outLines.push(ln));
+      }
+    } else {
+      outLines.push(s);
+    }
+  } else if (/^ALTER\s+TABLE\b/i.test(s)) {
+    // ALTER TABLE name <action>[, <action>...]
+    // Actions: ADD/DROP/RENAME/ALTER COLUMN, ADD/DROP CONSTRAINT, RENAME TO,
+    //   SET/RESET options. Split on top-level commas.
+    const altMatch = s.match(/^(ALTER\s+TABLE\s+(?:IF\s+EXISTS\s+)?[^\s,]+)\s*(.*)$/i);
+    if (altMatch) {
+      const tableHead = altMatch[1];
+      const actionsBody = altMatch[2].trim();
+      // Split on top-level commas (don't split inside type expressions like decimal(10,2))
+      const actions = splitTopLevelCommas(actionsBody).map(a => a.trim()).filter(Boolean);
+      if (actions.length > 1) {
+        outLines.push(tableHead);
+        actions.forEach((a, i) => {
+          outLines.push(PAD + a + (i === actions.length - 1 ? '' : ','));
+        });
+      } else {
+        // Single action — keep on one line for readability
+        outLines.push(s);
+      }
+    } else {
+      outLines.push(s);
+    }
+  } else if (/^DROP\s+(TABLE|VIEW|INDEX|SCHEMA|DATABASE|TYPE|SEQUENCE)/i.test(s) ||
+             /^TRUNCATE\b/i.test(s)) {
+    // Already simple — emit as is
+    outLines.push(s);
+  } else if (/^(GRANT|REVOKE)\b/i.test(s)) {
+    // GRANT/REVOKE: keep on one line for now (typically short)
+    outLines.push(s);
+  } else if (/^COMMENT\s+ON\b/i.test(s)) {
+    outLines.push(s);
   } else {
     // Fallback: break before common option keywords
     let r = s.replace(/\s+(DISTSTYLE|DISTKEY|SORTKEY|COMPOUND\s+SORTKEY|INTERLEAVED\s+SORTKEY|PARTITION\s+BY|CLUSTER\s+BY|LOCATION|STORED\s+AS|TBLPROPERTIES|OPTIONS|USING|AS)\b/gi, '\n$1');
@@ -900,8 +1671,15 @@ function formatStatement(raw, indentSize, commaPos, dialect) {
       }
       break;
     }
-    if (/^(CREATE|ALTER|DROP|TRUNCATE|GRANT|REVOKE|COMMENT|RENAME)\s/i.test(probe)) {
+    if (/^(CREATE|ALTER|DROP|TRUNCATE|GRANT|REVOKE|COMMENT\s+ON|RENAME)\s/i.test(probe)) {
       return { formatted: formatDDL(raw, indentSize, commaPos, dialect), error: null };
+    }
+    if (/^(INSERT|UPDATE|DELETE|MERGE|UPSERT|REPLACE)\s/i.test(probe)) {
+      return { formatted: formatDML(raw, indentSize, commaPos, dialect), error: null };
+    }
+    // Procedural / transaction-control / utility statements
+    if (/^(BEGIN|DECLARE|SET|COMMIT|ROLLBACK|SAVEPOINT|RELEASE|START\s+TRANSACTION|USE|EXPLAIN|SHOW|DESCRIBE|DESC|CALL|EXEC|EXECUTE|PERFORM|OPEN|FETCH|CLOSE|LOCK|UNLOCK|RESET|PRINT|RETURN|IF|WHILE|FOR|LOOP|REPEAT|CASE)\b/i.test(probe)) {
+      return { formatted: formatProcedural(raw, indentSize, commaPos, dialect), error: null };
     }
 
     const PAD = ' '.repeat(indentSize);
@@ -1508,6 +2286,25 @@ function protectLiteralsAndComments(src, opts) {
   while (i < src.length) {
     const ch = src[i];
 
+    // PostgreSQL dollar-quoted string: $$...$$  or  $tag$...$tag$
+    // The opening and closing tags must match exactly. Inside, anything goes
+    // (including raw single quotes), so this needs to be checked BEFORE the
+    // single-quote string branch.
+    if (ch === '$') {
+      const tagMatch = src.slice(i).match(/^\$([A-Za-z_][A-Za-z0-9_]*)?\$/);
+      if (tagMatch) {
+        const closeTag = tagMatch[0];
+        const closeIdx = src.indexOf(closeTag, i + closeTag.length);
+        if (closeIdx > -1) {
+          const endPos = closeIdx + closeTag.length;
+          strings.push(src.slice(i, endPos));
+          out += '§' + (strings.length - 1) + '§';
+          i = endPos;
+          continue;
+        }
+      }
+    }
+
     // String literal (handles '' escape)
     if (ch === "'") {
       let j = i + 1;
@@ -1564,8 +2361,8 @@ function protectLiteralsAndComments(src, opts) {
 // statement can never bleed into the next.
 function formatSQL(raw, indentSize, commaPos, dialect) {
   const statements = splitStatements(raw);
-  if (statements.length === 1) {
-    return formatStatement(raw, indentSize, commaPos, dialect);
+  if (statements.length === 0) {
+    return { formatted: raw, error: null };
   }
   const parts = [];
   const errors = [];
@@ -1575,9 +2372,15 @@ function formatSQL(raw, indentSize, commaPos, dialect) {
     const r = formatStatement(text, indentSize, commaPos, dialect);
     if (r.error) {
       errors.push(`Statement ${i+1}: ${r.error}`);
-      parts.push(text);
+      parts.push(text + (stmt.hasSemi ? ';' : ''));
     } else {
-      parts.push(r.formatted + (stmt.hasSemi ? ';' : ''));
+      // Attach ; to the last line of the formatted output, not on its own line.
+      let formatted = r.formatted;
+      if (stmt.hasSemi) {
+        const trimmed = formatted.replace(/\s+$/, '');
+        formatted = trimmed + ';';
+      }
+      parts.push(formatted);
     }
   });
   return {
@@ -1592,8 +2395,69 @@ function formatSQL(raw, indentSize, commaPos, dialect) {
 function splitStatements(s) {
   const stmts = [];
   let buf = '', i = 0;
+  // Track procedural block depth so ; inside BEGIN..END / IF..END IF /
+  // WHILE..END WHILE / LOOP..END LOOP / CASE..END CASE / $$..$$ are NOT
+  // treated as statement separators.
+  let blockDepth = 0;
+
+  // Match a keyword that opens or closes a block at the current position.
+  // Returns { kind: 'open'|'close', len } or null. Requires word boundaries.
+  function blockKeywordAt(pos) {
+    // Boundary on the left: must be start of string, whitespace, or non-identifier
+    const prev = pos === 0 ? ' ' : s[pos - 1];
+    if (/[A-Za-z0-9_]/.test(prev)) return null;
+
+    const rest = s.slice(pos);
+    // Order matters: longer first (END IF before END)
+    const openers = [
+      /^BEGIN\b(?!\s+(TRANSACTION|WORK|ATOMIC|TRY|CATCH))/i,  // bare BEGIN starts a block (NOT BEGIN TRANSACTION)
+      /^CASE\b(?!\s*[A-Z]*\s+THEN)/i,                       // CASE statement (not in expression)
+      // IF cond THEN starts an IF block. But IF EXISTS / IF NOT EXISTS in DDL doesn't.
+      /^IF\s+(?!EXISTS\b|NOT\s+EXISTS\b)/i,
+      /^WHILE\s/i,
+      /^LOOP\b/i,
+      /^REPEAT\b/i,
+      /^FOR\s+\w+\s+IN\b/i,
+    ];
+    const closers = [
+      /^END\s+IF\b/i,
+      /^END\s+WHILE\b/i,
+      /^END\s+LOOP\b/i,
+      /^END\s+CASE\b/i,
+      /^END\s+REPEAT\b/i,
+      /^END\s+FOR\b/i,
+      /^END\s+TRY\b/i,
+      /^END\s+CATCH\b/i,
+      /^UNTIL\b/i,           // closes REPEAT (UNTIL cond END REPEAT but UNTIL marks body end)
+      /^END\b/i,             // bare END — must come last
+    ];
+
+    for (const re of closers) {
+      const m = rest.match(re);
+      if (m) return { kind: 'close', len: m[0].length };
+    }
+    for (const re of openers) {
+      const m = rest.match(re);
+      if (m) return { kind: 'open', len: m[0].length };
+    }
+    return null;
+  }
+
   while (i < s.length) {
     const ch = s[i];
+
+    // PostgreSQL dollar-quoted string ($$...$$ or $tag$...$tag$)
+    if (ch === '$') {
+      const tagMatch = s.slice(i).match(/^\$([A-Za-z_][A-Za-z0-9_]*)?\$/);
+      if (tagMatch) {
+        const closeTag = tagMatch[0];
+        const closeIdx = s.indexOf(closeTag, i + closeTag.length);
+        const stop = closeIdx === -1 ? s.length : closeIdx + closeTag.length;
+        buf += s.slice(i, stop);
+        i = stop;
+        continue;
+      }
+    }
 
     // String literal (handle '' escape)
     if (ch === "'") {
@@ -1624,7 +2488,19 @@ function splitStatements(s) {
       continue;
     }
 
-    if (ch === ';') {
+    // Block keyword tracking
+    if (/[A-Za-z]/.test(ch)) {
+      const kw = blockKeywordAt(i);
+      if (kw) {
+        if (kw.kind === 'open')       blockDepth++;
+        else if (blockDepth > 0)      blockDepth--;
+        buf += s.slice(i, i + kw.len);
+        i += kw.len;
+        continue;
+      }
+    }
+
+    if (ch === ';' && blockDepth === 0) {
       stmts.push({ text: buf, hasSemi: true });
       buf = '';
       i++;
