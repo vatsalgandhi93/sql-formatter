@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>SQL Dialect Formatter v1.31.0 — EigenZ Solutions LLC</title>
+<title>SQL Dialect Formatter v1.35.0 — EigenZ Solutions LLC</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
 <style>
@@ -240,7 +240,7 @@ footer{padding:14px 24px;border-top:1px solid var(--border);display:flex;align-i
 </main>
 
 <footer>
-  <div class="fcopy">&copy; 2026 EigenZ Solutions LLC. &nbsp;<span style="color:var(--accent);font-family:var(--font-code);font-size:10px">v1.31.0</span> SQL Dialect Formatter by EigenZ Solutions LLC. All rights reserved.</div>
+  <div class="fcopy">&copy; 2026 EigenZ Solutions LLC. &nbsp;<span style="color:var(--accent);font-family:var(--font-code);font-size:10px">v1.35.0</span> SQL Dialect Formatter by EigenZ Solutions LLC. All rights reserved.</div>
   <div class="flinks">
     <a href="#">Documentation</a>
     <a href="#">VS Code Extension</a>
@@ -323,6 +323,7 @@ function upcase(s) {
     'FARM_FINGERPRINT','GENERATE_UUID','UUID',
 
     // ── Procedural / control flow / transactions ────────────────────────────
+    'COPY INTO','COPY','UNLOAD','LOAD DATA',
     'BEGIN TRANSACTION','BEGIN TRY','BEGIN CATCH','BEGIN','END TRY','END CATCH','END',
     'COMMIT TRANSACTION','COMMIT WORK','COMMIT','ROLLBACK TRANSACTION','ROLLBACK WORK','ROLLBACK',
     'SAVEPOINT','RELEASE SAVEPOINT','START TRANSACTION','TRANSACTION ISOLATION LEVEL',
@@ -406,7 +407,7 @@ function splitIntoClauses(s) {
     else if (s[i]===')') { depth--; cur+=s[i++]; continue; }
     if (depth===0) {
       const m = s.slice(i).match(
-        /^(SELECT|FROM|LEFT\s+OUTER\s+JOIN|RIGHT\s+OUTER\s+JOIN|FULL\s+OUTER\s+JOIN|LEFT\s+JOIN|RIGHT\s+JOIN|INNER\s+JOIN|OUTER\s+JOIN|CROSS\s+JOIN|FULL\s+JOIN|JOIN|WHERE|GROUP\s+BY|ORDER\s+BY|HAVING|QUALIFY|LIMIT|FOR\s+SYSTEM_TIME|FOR\s+VERSION\s+AS\s+OF)\b/i
+        /^(SELECT|FROM|LEFT\s+OUTER\s+JOIN|RIGHT\s+OUTER\s+JOIN|FULL\s+OUTER\s+JOIN|LEFT\s+JOIN|RIGHT\s+JOIN|INNER\s+JOIN|OUTER\s+JOIN|CROSS\s+JOIN|FULL\s+JOIN|CROSS\s+APPLY|OUTER\s+APPLY|JOIN|WHERE|GROUP\s+BY|ORDER\s+BY|HAVING|QUALIFY|LIMIT|OFFSET|FETCH\s+NEXT|FETCH\s+FIRST|FOR\s+SYSTEM_TIME|FOR\s+VERSION\s+AS\s+OF)\b/i
       );
       if (m) {
         if (cur.trim()) segs.push(cur.trim());
@@ -559,11 +560,26 @@ function renderExpr(expr, linePrefix, indentSize, commaPos) {
         const expanded = renderCaseInParen(linePrefix + before, inner, indentSize, commaPos);
         return expanded + (after.trim() ? ' ' + after.trim() : '');
       }
-      // ( value-list with line comments inside ) — bracket-align so the
-      // comments don't all collapse onto the same line as the opening paren.
-      // Trigger only when the inner content contains «CMT» placeholders,
-      // since plain inline lists like IN (1, 2, 3) should stay on one line.
-      if (/«CMT\d+»/.test(inner)) {
+      // ( value-list ... ) — bracket-align so it doesn't sprawl on one line.
+      // Trigger expansion when EITHER:
+      //   (a) the inner content has line comments (so they'd collapse onto the
+      //       opening-paren line), OR
+      //   (b) the full single-line render would exceed MAX_INLINE_WIDTH chars
+      //       AND the list has multiple top-level comma-separated items.
+      const MAX_INLINE_WIDTH = 100;
+      const hasComments = /«CMT\d+»/.test(inner);
+      // Estimate post-restore length: strings/comments are replaced with short
+      // placeholders like §3§ (3 chars), but the original values may be much
+      // longer. Use a conservative per-placeholder estimate so we err on the
+      // side of expanding long lists. 20 chars is roughly the average for
+      // typical SQL values (dates, IDs, emails, short names).
+      const PER_PH_EST = 20;
+      const phCount = (inner.match(/§\d+§/g) || []).length +
+                      (inner.match(/«CMT\d+»/g) || []).length;
+      const innerEstLen = inner.length + Math.max(0, phCount * (PER_PH_EST - 3));
+      const fullLineLen = linePrefix.length + before.length + 1 + innerEstLen + 1 + after.length;
+      const itemCount = splitByCommaDepth0(inner).length;
+      if (hasComments || (fullLineLen > MAX_INLINE_WIDTH && itemCount > 1)) {
         return renderParenList(linePrefix + before, inner, indentSize, commaPos) + after;
       }
       i = j; continue;
@@ -597,51 +613,83 @@ function renderParenList(prefix, inner, indentSize, commaPos) {
     if (!CMT_ONLY.test(items[k])) { lastReal = k; break; }
   }
 
-  items.forEach((item, idx) => {
-    // Pure-comment item: emit each comment placeholder on its own line
-    if (CMT_ONLY.test(item)) {
-      (item.match(/«CMT\d+»/gu) || []).forEach(t => lines.push(itemIndent + t));
-      return;
-    }
+  // Decide layout strategy:
+  //   COMMENTS PRESENT → one value per line (so each comment lands cleanly
+  //   with its value); the user clearly cared about line-by-line readability.
+  //
+  //   NO COMMENTS → chunk values into rows so the list reads horizontally
+  //   like a normal block: 5–6 values per row, or as many as fit under
+  //   MAX_ROW_WIDTH characters. This keeps long lists scannable without
+  //   turning into a vertical wall of text.
+  const anyComments = items.some(it => /«CMT\d+»/.test(it));
 
-    // Strip leading comment placeholders
-    let remaining = item;
-    const lead = [];
-    let m;
-    while ((m = remaining.match(/^(«CMT\d+»)\s*/u))) {
-      lead.push(m[1]);
-      remaining = remaining.slice(m[0].length);
-    }
-    lead.forEach(t => lines.push(itemIndent + t));
-
-    // Strip trailing comment placeholders. A single trailing comment stays
-    // inline with the value (inline-comment style); 2+ trailing comments go
-    // on their own lines.
-    const trail = [];
-    const tm = remaining.match(/(\s+«CMT\d+»)+$/u);
-    let inlineTrail = '';
-    if (tm) {
-      const tokens = tm[0].match(/«CMT\d+»/gu) || [];
-      if (tokens.length === 1) {
-        // Keep one trailing comment inline (e.g. value -- comment)
-        inlineTrail = ' ' + tokens[0];
-        remaining = remaining.slice(0, remaining.length - tm[0].length).trim();
-      } else {
-        tokens.forEach(t => trail.push(t));
-        remaining = remaining.slice(0, remaining.length - tm[0].length).trim();
+  if (anyComments) {
+    // ── Per-line layout (preserves comment positioning) ─────────────────
+    items.forEach((item, idx) => {
+      if (CMT_ONLY.test(item)) {
+        (item.match(/«CMT\d+»/gu) || []).forEach(t => lines.push(itemIndent + t));
+        return;
       }
-    }
+      let remaining = item;
+      const lead = [];
+      let m;
+      while ((m = remaining.match(/^(«CMT\d+»)\s*/u))) {
+        lead.push(m[1]);
+        remaining = remaining.slice(m[0].length);
+      }
+      lead.forEach(t => lines.push(itemIndent + t));
 
-    if (!remaining.trim()) {
-      // Edge: content was only comments
+      const trail = [];
+      const tm = remaining.match(/(\s+«CMT\d+»)+$/u);
+      let inlineTrail = '';
+      if (tm) {
+        const tokens = tm[0].match(/«CMT\d+»/gu) || [];
+        if (tokens.length === 1) {
+          inlineTrail = ' ' + tokens[0];
+          remaining = remaining.slice(0, remaining.length - tm[0].length).trim();
+        } else {
+          tokens.forEach(t => trail.push(t));
+          remaining = remaining.slice(0, remaining.length - tm[0].length).trim();
+        }
+      }
+
+      if (!remaining.trim()) {
+        trail.forEach(t => lines.push(itemIndent + t));
+        return;
+      }
+      const isLast = idx === lastReal;
+      lines.push(itemIndent + remaining + (isLast ? '' : ',') + inlineTrail);
       trail.forEach(t => lines.push(itemIndent + t));
-      return;
+    });
+  } else {
+    // ── Chunked layout (5–6 values per row, width-aware) ────────────────
+    const MAX_ROW_WIDTH = 100;        // soft target for line length
+    const MAX_ITEMS_PER_ROW = 6;       // hard cap (keeps things scannable)
+    let row = [];
+    let rowLen = itemIndent.length;
+
+    function flushRow(isFinalRow) {
+      if (!row.length) return;
+      const text = row.join(', ');
+      const tail = isFinalRow ? '' : ',';
+      lines.push(itemIndent + text + tail);
+      row = [];
+      rowLen = itemIndent.length;
     }
 
-    const isLast = idx === lastReal;
-    lines.push(itemIndent + remaining + (isLast ? '' : ',') + inlineTrail);
-    trail.forEach(t => lines.push(itemIndent + t));
-  });
+    items.forEach((item, idx) => {
+      const isLast = idx === items.length - 1;
+      // +2 accounts for ', ' between items
+      const addLen = item.length + (row.length ? 2 : 0);
+      if (row.length >= MAX_ITEMS_PER_ROW ||
+          (row.length > 0 && rowLen + addLen > MAX_ROW_WIDTH)) {
+        flushRow(false);
+      }
+      row.push(item);
+      rowLen += addLen;
+      if (isLast) flushRow(true);
+    });
+  }
 
   lines.push(closePad + ')');
   return lines.join('\n');
@@ -728,9 +776,9 @@ function formatDML(raw, indentSize, commaPos, dialect) {
   });
 
   // Operator spacing — same protection pattern as formatStatement so '->' / '=>' survive
-  s = s.replace(/->/g, '«ARROW_LAMBDA»').replace(/=>/g, '«ARROW_NAMEDARG»');
+  s = s.replace(/->>/g, '«ARROW_JSON_TEXT»').replace(/->/g, '«ARROW_LAMBDA»').replace(/=>/g, '«ARROW_NAMEDARG»').replace(/#>>/g, '«ARROW_JSON_PATH_TEXT»').replace(/#>/g, '«ARROW_JSON_PATH»');
   s = s.replace(/\s*([=<>!]+)\s*/g, ' $1 ').replace(/\s{2,}/g, ' ');
-  s = s.replace(/«ARROW_LAMBDA»/g, '->').replace(/«ARROW_NAMEDARG»/g, '=>');
+  s = s.replace(/«ARROW_JSON_TEXT»/g, '->>').replace(/«ARROW_LAMBDA»/g, '->').replace(/«ARROW_NAMEDARG»/g, '=>').replace(/«ARROW_JSON_PATH_TEXT»/g, '#>>').replace(/«ARROW_JSON_PATH»/g, '#>');
 
   // Detect statement kind and dispatch
   const lines = [];
@@ -786,12 +834,53 @@ function formatInsert(s, indentSize, commaPos, dialect) {
 
   // Distinguish VALUES vs SELECT vs DEFAULT VALUES
   if (/^VALUES\b/i.test(rest)) {
-    const values = rest.slice(6).trim();  // after "VALUES"
-    // Split into tuples (..), (..)  at depth 0
+    let values = rest.slice(6).trim();  // after "VALUES"
+
+    // Peel trailing clauses that MUST become their own lines:
+    // RETURNING (Postgres), OUTPUT (SQL Server), ON CONFLICT (Postgres),
+    // ON DUPLICATE KEY UPDATE (MySQL).
+    const tailClauses = [];
+    const tailRe = /\s+(RETURNING|OUTPUT|ON\s+CONFLICT|ON\s+DUPLICATE\s+KEY\s+UPDATE)\b/i;
+    let tailMatch;
+    while ((tailMatch = values.match(tailRe))) {
+      // The clause starts at tailMatch.index — but only count it if at depth 0.
+      let depth = 0;
+      let realIdx = -1;
+      for (let i = 0; i < values.length; i++) {
+        if (values[i] === '(') depth++;
+        else if (values[i] === ')') depth--;
+        else if (depth === 0) {
+          const sub = values.slice(i);
+          const subMatch = sub.match(/^\s+(RETURNING|OUTPUT|ON\s+CONFLICT|ON\s+DUPLICATE\s+KEY\s+UPDATE)\b/i);
+          if (subMatch) { realIdx = i; break; }
+        }
+      }
+      if (realIdx === -1) break;
+      tailClauses.unshift(values.slice(realIdx).trim());
+      values = values.slice(0, realIdx).trim();
+    }
+
+    // Split tuples (..), (..) at depth 0
     const tuples = splitTopLevelCommas(values).map(t => t.trim()).filter(Boolean);
     lines.push('VALUES');
     tuples.forEach((t, i) => {
       lines.push(PAD + t + (i === tuples.length - 1 ? '' : ','));
+    });
+
+    // Now emit each peeled tail clause on its own line(s)
+    tailClauses.forEach(tc => {
+      const m = tc.match(/^(RETURNING|OUTPUT)\s+(.*)$/i);
+      if (m) {
+        // Split returning columns onto separate lines
+        const cols = splitTopLevelCommas(m[2]);
+        lines.push(m[1].toUpperCase());
+        cols.forEach((c, i) => {
+          lines.push(PAD + c.trim() + (i === cols.length - 1 ? '' : ','));
+        });
+      } else {
+        // ON CONFLICT … / ON DUPLICATE KEY UPDATE … — keep as a single line
+        lines.push(tc);
+      }
     });
   } else if (/^SELECT\b/i.test(rest) || /^WITH\b/i.test(rest)) {
     // Delegate query body to formatStatement
@@ -851,6 +940,39 @@ function formatUpdate(s, indentSize, commaPos, dialect) {
     }
   }
 
+  // OUTPUT (T-SQL: comes BEFORE WHERE in UPDATE)
+  if (/^OUTPUT\b/i.test(rest)) {
+    // OUTPUT col_list [INTO target] — stop at INTO or next top-level clause
+    let outputBody = rest.slice(6).trim();
+    const outTailRe = /\b(INTO|WHERE|FROM)\b/i;
+    let oEnd = outputBody.length;
+    let depth = 0;
+    for (let i = 0; i < outputBody.length; i++) {
+      if (outputBody[i] === '(') { depth++; continue; }
+      if (outputBody[i] === ')') { depth--; continue; }
+      if (depth === 0) {
+        const m = outputBody.slice(i).match(outTailRe);
+        if (m && m.index === 0 && (i === 0 || !/[A-Za-z0-9_]/.test(outputBody[i-1]))) {
+          oEnd = i; break;
+        }
+      }
+    }
+    const cols = splitTopLevelCommas(outputBody.slice(0, oEnd).trim());
+    rest = outputBody.slice(oEnd).trim();
+    lines.push('OUTPUT');
+    cols.forEach((c, i) => {
+      lines.push(PAD + c.trim() + (i === cols.length - 1 ? '' : ','));
+    });
+    // INTO clause on its own line
+    if (/^INTO\b/i.test(rest)) {
+      const intoM = rest.match(/^(INTO\s+\S+(?:\s*\([^)]*\))?)\s*(.*)$/i);
+      if (intoM) {
+        lines.push(intoM[1]);
+        rest = intoM[2].trim();
+      }
+    }
+  }
+
   // WHERE — split by AND/OR
   if (/^WHERE\b/i.test(rest)) {
     let wherePart = rest.slice(5).trim();
@@ -874,12 +996,12 @@ function formatUpdate(s, indentSize, commaPos, dialect) {
     });
   }
 
-  // RETURNING / OUTPUT
-  if (/^(RETURNING|OUTPUT)\b/i.test(rest)) {
-    const m = rest.match(/^(RETURNING|OUTPUT)\s+(.*)$/i);
+  // RETURNING (Postgres) — same as OUTPUT but always trailing
+  if (/^RETURNING\b/i.test(rest)) {
+    const m = rest.match(/^RETURNING\s+(.*)$/i);
     if (m) {
-      const cols = splitTopLevelCommas(m[2].replace(/;$/, '').trim());
-      lines.push(m[1].toUpperCase());
+      const cols = splitTopLevelCommas(m[1].replace(/;$/, '').trim());
+      lines.push('RETURNING');
       cols.forEach((c, i) => {
         lines.push(PAD + c.trim() + (i === cols.length - 1 ? '' : ','));
       });
@@ -960,7 +1082,8 @@ function formatMerge(s, indentSize, commaPos, dialect) {
   const PAD = ' '.repeat(indentSize);
   const lines = [];
   // Capture target (table name) and an optional alias that isn't a keyword
-  const head = s.match(/^MERGE\s+INTO\s+([^\s]+)(?:\s+(?!USING\b)(\w+))?/i);
+  // Accept both MERGE INTO and bare MERGE (SQL Server)
+  const head = s.match(/^MERGE(?:\s+INTO)?\s+([^\s]+)(?:\s+(?!USING\b)(\w+))?/i);
   if (!head) { lines.push(s); return lines; }
   lines.push('MERGE INTO ' + head[1] + (head[2] ? ' ' + head[2] : ''));
 
@@ -1061,9 +1184,9 @@ function formatProcedural(raw, indentSize, commaPos, dialect) {
   s = upcase(s);
 
   // Apply operator spacing — protect arrow tokens first
-  s = s.replace(/->/g, '«ARROW_LAMBDA»').replace(/=>/g, '«ARROW_NAMEDARG»');
+  s = s.replace(/->>/g, '«ARROW_JSON_TEXT»').replace(/->/g, '«ARROW_LAMBDA»').replace(/=>/g, '«ARROW_NAMEDARG»').replace(/#>>/g, '«ARROW_JSON_PATH_TEXT»').replace(/#>/g, '«ARROW_JSON_PATH»');
   s = s.replace(/\s*([=<>!]+)\s*/g, ' $1 ').replace(/\s{2,}/g, ' ');
-  s = s.replace(/«ARROW_LAMBDA»/g, '->').replace(/«ARROW_NAMEDARG»/g, '=>');
+  s = s.replace(/«ARROW_JSON_TEXT»/g, '->>').replace(/«ARROW_LAMBDA»/g, '->').replace(/«ARROW_NAMEDARG»/g, '=>').replace(/«ARROW_JSON_PATH_TEXT»/g, '#>>').replace(/«ARROW_JSON_PATH»/g, '#>');
 
   const lines = [];
   const head = s.match(/^([A-Z][A-Z\s]*?)(?=\s|$|\()/);
@@ -1723,11 +1846,17 @@ function formatStatement(raw, indentSize, commaPos, dialect) {
     // 6. Space around operators (=, <, >, !, <=, >=, <>) — but PROTECT
     //    arrow tokens first so '->' (lambda) and '=>' (named argument) are not
     //    split into '- >' or '= >'. They are SQL operators in their own right.
+    s = s.replace(/->>/g, '«ARROW_JSON_TEXT»');
     s = s.replace(/->/g, '«ARROW_LAMBDA»');
     s = s.replace(/=>/g, '«ARROW_NAMEDARG»');
+    s = s.replace(/#>>/g, '«ARROW_JSON_PATH_TEXT»');
+    s = s.replace(/#>/g, '«ARROW_JSON_PATH»');
     s = s.replace(/\s*([=<>!]+)\s*/g,' $1 ').replace(/\s{2,}/g,' ');
+    s = s.replace(/«ARROW_JSON_TEXT»/g, '->>');
     s = s.replace(/«ARROW_LAMBDA»/g, '->');
     s = s.replace(/«ARROW_NAMEDARG»/g, '=>');
+    s = s.replace(/«ARROW_JSON_PATH_TEXT»/g, '#>>');
+    s = s.replace(/«ARROW_JSON_PATH»/g, '#>');
 
     // (strings already protected at the top of the pipeline)
 
@@ -2349,8 +2478,9 @@ function protectLiteralsAndComments(src, opts) {
       continue;
     }
 
-    // Line comment -- or #
-    if ((ch === '-' && src[i+1] === '-') || ch === '#') {
+    // Line comment -- or #  (with one exception for PostgreSQL JSON operators #> #>>)
+    if ((ch === '-' && src[i+1] === '-') ||
+        (ch === '#' && src[i+1] !== '>')) {
       let j = src.indexOf('\n', i);
       if (j === -1) j = src.length;
       comments.push(src.slice(i, j));
@@ -2490,8 +2620,9 @@ function splitStatements(s) {
       continue;
     }
 
-    // Line comments (-- and #)
-    if ((ch === '-' && s[i+1] === '-') || ch === '#') {
+    // Line comments (-- and #), but NOT PostgreSQL #> / #>> JSON operators
+    if ((ch === '-' && s[i+1] === '-') ||
+        (ch === '#' && s[i+1] !== '>')) {
       const nl = s.indexOf('\n', i);
       const stop = nl === -1 ? s.length : nl;
       buf += s.slice(i, stop);
