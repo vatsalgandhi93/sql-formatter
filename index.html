@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>SQL Dialect Formatter v1.35.0 — EigenZ Solutions LLC</title>
+<title>SQL Dialect Formatter v1.39.0 — EigenZ Solutions LLC</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
 <style>
@@ -249,6 +249,7 @@ footer{padding:14px 24px;border-top:1px solid var(--border);display:flex;align-i
 </footer>
 
 <script>
+
 'use strict';
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -702,12 +703,29 @@ function renderWithClause(withBody, indentSize, commaPos) {
   cteParts.forEach((part, idx) => {
     part = part.trim();
     const isLast = idx === cteParts.length-1;
+
+    // Peel any leading comment placeholders off and emit them on their own
+    // indented lines BEFORE the CTE definition. This handles cases like:
+    //   WITH /* CTE 1: ... */ omp_intents AS (...)
+    //   ..., /* CTE 2: ... */ omp_placements AS (...)
+    const leadCmts = [];
+    let lm;
+    while ((lm = part.match(/^(«CMT\d+»)\s*/u))) {
+      leadCmts.push(lm[1]);
+      part = part.slice(lm[0].length).trim();
+    }
+    leadCmts.forEach(c => lines.push('  ' + c));
+
     const m = part.match(/^(\w+)\s+AS\s*\(/i);
     if (!m) { lines.push('  '+part+(isLast?'':',')); return; }
     const cteName    = m[1];
     const parenStart = part.indexOf('(', m[0].length-1);
     const parenEnd   = findCloseParen(part, parenStart);
     const innerSQL   = part.slice(parenStart+1, parenEnd-1).trim();
+    // Anything AFTER the closing paren is trailing — usually comments
+    // (e.g. line/block comments between this CTE and the next, or between
+    // the last CTE and the main SELECT).
+    const trailing   = part.slice(parenEnd).trim();
     const linePrefix = '  '+cteName+' AS ';
     const { formatted } = formatSQL(innerSQL, indentSize, commaPos);
     const col       = linePrefix.length;
@@ -715,6 +733,11 @@ function renderWithClause(withBody, indentSize, commaPos) {
     const closePad  = ' '.repeat(col);
     const body = formatted.split('\n').map(l => subIndent+l).join('\n');
     lines.push(linePrefix+'(\n'+body+'\n'+closePad+')'+(isLast?'':','));
+    // Emit any trailing comments on their own indented lines
+    if (trailing) {
+      const trailingTokens = trailing.match(/«CMT\d+»/gu) || [];
+      trailingTokens.forEach(t => lines.push('  ' + t));
+    }
   });
   return lines.join('\n');
 }
@@ -723,14 +746,39 @@ function renderWithClause(withBody, indentSize, commaPos) {
 
 
 // Extract trailing «CMTn» placeholders from a clause token.
-// Returns { clean, cmts } so the caller can push them as separate lines.
-function stripTrailingCmts(tok) {
+// Returns { clean, inlineTrail, cmts }:
+//   - inlineTrail: a string starting with ' ' if there's ONE trailing comment
+//     (caller should append it to the same output line). Empty otherwise.
+//   - cmts: trailing comments that need their own output lines (when 2+).
+// Heuristic: a single trailing comment was almost certainly inline in the source
+// (e.g. 'AND x = 1 -- because reason'). Multiple trailing comments mean the
+// user put them on separate lines in the source, so we preserve that.
+function stripTrailingCmts(tok, commentsArr) {
   const m = tok.match(/((?:\s+«CMT\d+»)+)$/u);
-  if (!m) return { clean: tok, cmts: [] };
-  return {
-    clean: tok.slice(0, tok.length - m[0].length).trim(),
-    cmts:  m[0].match(/«CMT\d+»/gu) || []
-  };
+  if (!m) return { clean: tok, inlineTrail: '', cmts: [] };
+  const tokens = m[0].match(/«CMT\d+»/gu) || [];
+  const clean = tok.slice(0, tok.length - m[0].length).trim();
+
+  // Determine each trailing comment's origin: inline (same source line as the
+  // preceding code) or own-line (sat alone on its source line).
+  function isOwnLine(placeholder) {
+    if (!commentsArr) return false;
+    const m2 = placeholder.match(/«CMT(\d+)»/);
+    if (!m2) return false;
+    const text = commentsArr[Number(m2[1])];
+    return text && text.startsWith('\x00OWN\x00');
+  }
+
+  // Only the FIRST trailing comment can be a same-line trailing comment for
+  // the preceding code. If it is, fold it inline. Everything after that was
+  // necessarily on its own line in the source.
+  let inlineTrail = '';
+  let rest = tokens;
+  if (tokens.length >= 1 && !isOwnLine(tokens[0])) {
+    inlineTrail = ' ' + tokens[0];
+    rest = tokens.slice(1);
+  }
+  return { clean, inlineTrail, cmts: rest };
 }
 
 // Basic DDL formatter — handles CREATE TABLE column lists, otherwise pretty-prints
@@ -802,7 +850,8 @@ function formatDML(raw, indentSize, commaPos, dialect) {
   strings.forEach((str, i) => {
     result = result.replace(new RegExp('§' + i + '§', 'g'), () => str);
   });
-  comments.forEach((cmt, i) => {
+  comments.forEach((cmtRaw, i) => {
+    const cmt = cmtRaw.replace(/^\x00OWN\x00/, '');
     result = result.replace('«CMT' + i + '»', () => cmt);
   });
   return result;
@@ -931,12 +980,46 @@ function formatUpdate(s, indentSize, commaPos, dialect) {
     });
   }
 
-  // FROM (for UPDATE ... FROM <source>)
+  // FROM (for UPDATE ... FROM <source>) — paren-aware boundary detection
   if (/^FROM\b/i.test(rest)) {
-    const fromMatch = rest.match(/^FROM\s+([^]*?)(?=\b(WHERE|RETURNING|OUTPUT)\b|$)/i);
-    if (fromMatch) {
-      lines.push('FROM ' + fromMatch[1].trim());
-      rest = rest.slice(fromMatch[0].length).trim();
+    let fromBody = rest.slice(4).trim();
+    const fromTailRe = /\b(WHERE|RETURNING|OUTPUT)\b/i;
+    let fEnd = fromBody.length;
+    let depth = 0;
+    for (let i = 0; i < fromBody.length; i++) {
+      if (fromBody[i] === '(') { depth++; continue; }
+      if (fromBody[i] === ')') { depth--; continue; }
+      if (depth === 0) {
+        const m = fromBody.slice(i).match(fromTailRe);
+        if (m && m.index === 0 && (i === 0 || !/[A-Za-z0-9_]/.test(fromBody[i-1]))) {
+          fEnd = i; break;
+        }
+      }
+    }
+    const fromSource = fromBody.slice(0, fEnd).trim();
+    rest = fromBody.slice(fEnd).trim();
+
+    // If the FROM source is a derived-table subquery '( SELECT ... ) alias',
+    // expand the subquery body so the SELECT clauses each go on their own line.
+    // Layout (matches the rest of the formatter's derived-table style):
+    //   FROM (
+    //         SELECT ...
+    //         FROM ...
+    //        ) alias
+    const subqueryMatch = fromSource.match(/^\(([^]*)\)\s*(?:AS\s+)?(\w+)?\s*$/i);
+    if (subqueryMatch) {
+      const inner = subqueryMatch[1].trim();
+      const aliasName = subqueryMatch[2] || '';
+      const innerFmt = formatEmbeddedQuery(inner, null, null, indentSize, commaPos, dialect);
+      const col = 'FROM ('.length;  // 6
+      const bodyIndent = ' '.repeat(col + 1);  // align under one space past (
+      const closePad = ' '.repeat(col - 1);    // close paren one column left
+      const indentedBody = innerFmt.split('\n').map(ln => bodyIndent + ln).join('\n');
+      lines.push('FROM (');
+      lines.push(indentedBody);
+      lines.push(closePad + ')' + (aliasName ? ' ' + aliasName : ''));
+    } else {
+      lines.push('FROM ' + fromSource);
     }
   }
 
@@ -1475,7 +1558,8 @@ function assemble(lines, headerCmts, strings, comments) {
   strings.forEach((str, i) => {
     result = result.replace(new RegExp('§' + i + '§', 'g'), () => str);
   });
-  comments.forEach((cmt, i) => {
+  comments.forEach((cmtRaw, i) => {
+    const cmt = cmtRaw.replace(/^\x00OWN\x00/, '');
     result = result.replace('«CMT' + i + '»', () => cmt);
   });
   return result;
@@ -1661,7 +1745,8 @@ function formatDDL(raw, indentSize, commaPos, dialect) {
   strings.forEach((str, i) => {
     result = result.replace(new RegExp('§' + i + '§','g'), () => str);
   });
-  comments.forEach((cmt, i) => {
+  comments.forEach((cmtRaw, i) => {
+    const cmt = cmtRaw.replace(/^\x00OWN\x00/, '');
     result = result.replace('«CMT' + i + '»', () => cmt);
   });
   return result;
@@ -1741,6 +1826,12 @@ function formatEmbeddedQuery(queryPart, strings, comments, indentSize, commaPos,
   // If we already have strings/comments arrays, expand placeholders back to
   // their original text before re-tokenizing in formatStatement. Otherwise the
   // string is already raw.
+  //
+  // CRITICAL: by the time we get here, the outer pipeline has collapsed the
+  // query onto one line. If we restore a line comment (-- or #) verbatim, it
+  // will eat everything to the next \n — which is end-of-string, since the
+  // query has no newlines. So we must append a \n after each line comment
+  // during restore so the inner tokenizer can find a comment boundary.
   let raw = queryPart;
   if (strings) {
     strings.forEach((str, i) => {
@@ -1748,7 +1839,16 @@ function formatEmbeddedQuery(queryPart, strings, comments, indentSize, commaPos,
     });
   }
   if (comments) {
-    comments.forEach((cmt, i) => {
+    comments.forEach((cmtRaw, i) => {
+      // Strip the own-line sentinel before restoring — the inner formatStatement
+      // re-tokenizes and re-tags from the raw source positions.
+      let cmt = cmtRaw.replace(/^\x00OWN\x00/, '');
+      // Line comments need a newline terminator so the inner tokenizer doesn't
+      // gobble everything after them on the single-line collapsed text.
+      // Block comments /* ... */ don't have this problem.
+      if (cmt.startsWith('--') || cmt.startsWith('#')) {
+        cmt = cmt + '\n';
+      }
       raw = raw.replace('«CMT' + i + '»', () => cmt);
     });
   }
@@ -1865,7 +1965,8 @@ function formatStatement(raw, indentSize, commaPos, dialect) {
     //    whitespace collapse erased that newline. Restore it as an actual \n
     //    so the clause splitter never merges tokens across a comment line.
     s = s.replace(/«CMT(\d+)»/g, (m, n) => {
-      const cmt = comments[Number(n)];
+      const cmtRaw = comments[Number(n)];
+      const cmt = cmtRaw ? cmtRaw.replace(/^\x00OWN\x00/, '') : '';
       if (cmt && (cmt.startsWith('--') || cmt.startsWith('#'))) {
         return m + '\n';
       }
@@ -2003,7 +2104,7 @@ function formatStatement(raw, indentSize, commaPos, dialect) {
           // Single source. If it begins with a derived-table subquery — i.e.
           // ( SELECT … ) alias — bracket-align it the same way we do for
           // subqueries in WHERE/JOIN. Otherwise emit on one line.
-          const { clean: fromClean, cmts: fromCmts } = stripTrailingCmts(tok);
+          const { clean: fromClean, inlineTrail: fromInline, cmts: fromCmts } = stripTrailingCmts(tok, comments);
           const body = fromClean.replace(/^FROM\s*/i, '');
           if (body.startsWith('(')) {
             const closeIdx = findCloseParen(body, 0);
@@ -2018,8 +2119,8 @@ function formatStatement(raw, indentSize, commaPos, dialect) {
               }
             }
           }
-          outLines.push(fromClean);
-          fromCmts.forEach(c => outLines.push(c));
+          outLines.push(fromClean + fromInline);
+          fromCmts.forEach(c => outLines.push(PAD + c));
         } else {
           // Multiple comma-separated sources — FROM on its own, each source indented
           outLines.push('FROM');
@@ -2046,16 +2147,31 @@ function formatStatement(raw, indentSize, commaPos, dialect) {
               remaining = remaining.slice(lm[0].length);
             }
             leadCmts.forEach(t => outLines.push(PAD + t));
-            // Pull trailing comments off
+            // Pull trailing comments off. ONE → inline, 2+ → own lines.
             const trailCmts = [];
+            let inlineTrail = '';
             const tm = remaining.match(/(\s+«CMT\d+»)+$/u);
             if (tm) {
-              (tm[0].match(/«CMT\d+»/gu) || []).forEach(t => trailCmts.push(t));
+              const tokens = tm[0].match(/«CMT\d+»/gu) || [];
+              function _isOwnLine(t) {
+                const mt = t.match(/«CMT(\d+)»/);
+                if (!mt) return false;
+                const txt = comments[Number(mt[1])];
+                return txt && txt.startsWith('\x00OWN\x00');
+              }
+              // First trailing comment can be inline (if same source line);
+              // any further trailing comments must have been on own lines.
+              if (tokens.length >= 1 && !_isOwnLine(tokens[0])) {
+                inlineTrail = ' ' + tokens[0];
+                tokens.slice(1).forEach(t => trailCmts.push(t));
+              } else {
+                tokens.forEach(t => trailCmts.push(t));
+              }
               remaining = remaining.slice(0, remaining.length - tm[0].length).trim();
             }
             if (!remaining.trim()) return;
             const isLastReal = sidx === lastReal;
-            outLines.push(PAD + remaining + (isLastReal ? '' : ','));
+            outLines.push(PAD + remaining + (isLastReal ? '' : ',') + inlineTrail);
             trailCmts.forEach(t => outLines.push(PAD + t));
           });
         }
@@ -2090,22 +2206,25 @@ function formatStatement(raw, indentSize, commaPos, dialect) {
           // Expand any subquery inside the table expression (bracket-aligned)
           const expandedTable = renderExpr(tableExpr, joinKw + ' ', indentSize, commaPos);
           // Strip trailing comments, then split multi-condition ON by AND/OR
-          const { clean: condClean, cmts: condCmts } = stripTrailingCmts(condition);
+          const { clean: condClean, inlineTrail: condInline, cmts: condCmts } = stripTrailingCmts(condition, comments);
           outLines.push(expandedTable);
           const condParts = splitByAndOrDepth0(condClean);
           condParts.forEach((part, pidx) => {
             const pfx = pidx === 0 ? PAD + condKw + ' ' : PAD;
-            outLines.push(renderExpr(part.trim(), pfx, indentSize, commaPos));
+            const isLastPart = pidx === condParts.length - 1;
+            const tail = isLastPart ? condInline : '';
+            outLines.push(renderExpr(part.trim(), pfx, indentSize, commaPos) + tail);
           });
-          condCmts.forEach(c => outLines.push(c));
+          condCmts.forEach(c => outLines.push(PAD + c));
         } else {
           // No ON/USING — bare join, still expand subquery if present
           const bareJoin = renderExpr(rest.trim(), joinKw + ' ', indentSize, commaPos);
           const bareLines = bareJoin.split('\n');
-          const { clean: bareClean, cmts: bareCmts } = stripTrailingCmts(bareLines[bareLines.length-1]);
-          bareLines[bareLines.length-1] = bareClean;
+          const { clean: bareClean, inlineTrail: bareInline, cmts: bareCmts } =
+            stripTrailingCmts(bareLines[bareLines.length-1], comments);
+          bareLines[bareLines.length-1] = bareClean + bareInline;
           outLines.push(bareLines.join('\n'));
-          bareCmts.forEach(c => outLines.push(c));
+          bareCmts.forEach(c => outLines.push(PAD + c));
         }
 
       } else if (/^(WHERE|HAVING|QUALIFY)/.test(tok)) {
@@ -2135,11 +2254,27 @@ function formatStatement(raw, indentSize, commaPos, dialect) {
           if (!remaining.trim()) return;
 
           // Pull trailing comment placeholders off — every trailing one was on
-          // its own line in the original SQL (--ANDs / commented-out conditions)
+          // its own line in the original SQL (--ANDs / commented-out conditions).
+          // If there's exactly ONE trailing comment, keep it inline with the
+          // condition (preserves the common 'AND x = 1 -- because reason' style).
+          // If there are 2+, the user clearly put them on separate lines.
           const trailCmts = [];
           const tm = remaining.match(/(\s+«CMT\d+»)+$/u);
+          let inlineTrail = '';
           if (tm) {
-            (tm[0].match(/«CMT\d+»/gu) || []).forEach(t => trailCmts.push(t));
+            const tokens = tm[0].match(/«CMT\d+»/gu) || [];
+            function _isOwnLine_b(t) {
+              const mt = t.match(/«CMT(\d+)»/);
+              if (!mt) return false;
+              const txt = comments[Number(mt[1])];
+              return txt && txt.startsWith('\x00OWN\x00');
+            }
+            if (tokens.length >= 1 && !_isOwnLine_b(tokens[0])) {
+              inlineTrail = ' ' + tokens[0];
+              tokens.slice(1).forEach(t => trailCmts.push(t));
+            } else {
+              tokens.forEach(t => trailCmts.push(t));
+            }
             remaining = remaining.slice(0, remaining.length - tm[0].length).trim();
           }
 
@@ -2149,7 +2284,7 @@ function formatStatement(raw, indentSize, commaPos, dialect) {
             return;
           }
 
-          outLines.push(renderExpr(remaining, PAD, indentSize, commaPos));
+          outLines.push(renderExpr(remaining, PAD, indentSize, commaPos) + inlineTrail);
           trailCmts.forEach(t => outLines.push(PAD + t));
         });
 
@@ -2183,11 +2318,24 @@ function formatStatement(raw, indentSize, commaPos, dialect) {
           }
           lead.forEach(t => outLines.push(PAD + t));
 
-          // Pull trailing comment placeholders off
+          // Pull trailing comment placeholders off. ONE → inline, 2+ → own lines.
           const trail = [];
+          let inlineTrail = '';
           const tm = remaining.match(/(\s+«CMT\d+»)+$/u);
           if (tm) {
-            (tm[0].match(/«CMT\d+»/gu) || []).forEach(t => trail.push(t));
+            const tokens = tm[0].match(/«CMT\d+»/gu) || [];
+            function _isOwnLine_gb(t) {
+              const mt = t.match(/«CMT(\d+)»/);
+              if (!mt) return false;
+              const txt = comments[Number(mt[1])];
+              return txt && txt.startsWith('\x00OWN\x00');
+            }
+            if (tokens.length >= 1 && !_isOwnLine_gb(tokens[0])) {
+              inlineTrail = ' ' + tokens[0];
+              tokens.slice(1).forEach(t => trail.push(t));
+            } else {
+              tokens.forEach(t => trail.push(t));
+            }
             remaining = remaining.slice(0, remaining.length - tm[0].length).trim();
           }
           if (!remaining.trim()) {
@@ -2196,22 +2344,22 @@ function formatStatement(raw, indentSize, commaPos, dialect) {
           }
 
           const isLast = idx === lastReal;
-          outLines.push(commaPos === 'after'
+          outLines.push((commaPos === 'after'
             ? PAD + remaining + (isLast ? '' : ',')
-            : PAD + (idx === 0 ? '  ' : ', ') + remaining);
+            : PAD + (idx === 0 ? '  ' : ', ') + remaining) + inlineTrail);
           trail.forEach(t => outLines.push(PAD + t));
         });
 
       } else if (/^FOR\s+(SYSTEM_TIME|VERSION)/i.test(tok)) {
         // Delta Lake / Databricks Time Travel clause — own line
-        const { clean: ftClean, cmts: ftCmts } = stripTrailingCmts(tok);
-        outLines.push(ftClean);
-        ftCmts.forEach(c => outLines.push(c));
+        const { clean: ftClean, inlineTrail: ftInline, cmts: ftCmts } = stripTrailingCmts(tok, comments);
+        outLines.push(ftClean + ftInline);
+        ftCmts.forEach(c => outLines.push(PAD + c));
       } else {
-        // LIMIT, bare tokens — strip trailing comments to their own lines
-        const { clean: elseClean, cmts: elseCmts } = stripTrailingCmts(tok);
-        outLines.push(elseClean);
-        elseCmts.forEach(c => outLines.push(c));
+        // LIMIT, bare tokens — trailing comments inline (1) or own lines (2+)
+        const { clean: elseClean, inlineTrail: elseInline, cmts: elseCmts } = stripTrailingCmts(tok, comments);
+        outLines.push(elseClean + elseInline);
+        elseCmts.forEach(c => outLines.push(PAD + c));
         if (/^LIMIT\b/i.test(tok)) prevWasQueryEnd = true;
       }
     });
@@ -2223,14 +2371,20 @@ function formatStatement(raw, indentSize, commaPos, dialect) {
     strings.forEach((str, i) => {
       result = result.replace(new RegExp(`§${i}§`,'g'), () => str);
     });
-    comments.forEach((cmt, i) => {
+    comments.forEach((cmtRaw, i) => {
+      const cmt = cmtRaw.replace(/^\x00OWN\x00/, '');
       const placeholder = `«CMT${i}»`;
+      const phPos = result.indexOf(placeholder);
+      // Guard: if the placeholder isn't present in result, it was already
+      // consumed by a nested formatSQL call (e.g. from renderWithClause).
+      // Skip the restore for this index — the inner pass handled it.
+      if (phPos === -1) return;
       // For multi-line /* … */ block comments, re-indent continuation lines
       // to match the column where the placeholder appears in the formatted output.
       if (cmt.includes('\n')) {
-        const lineStart = result.lastIndexOf('\n', result.indexOf(placeholder)) + 1;
-        const phPos     = result.indexOf(placeholder);
-        const indent    = ' '.repeat(phPos - lineStart);
+        const lineStart = result.lastIndexOf('\n', phPos) + 1;
+        const indentWidth = Math.max(0, phPos - lineStart);
+        const indent = ' '.repeat(indentWidth);
         // Split into lines, trim each interior line, then re-indent
         const lines = cmt.split('\n');
         const reindented = lines.map((ln, k) => {
@@ -2481,9 +2635,20 @@ function protectLiteralsAndComments(src, opts) {
     // Line comment -- or #  (with one exception for PostgreSQL JSON operators #> #>>)
     if ((ch === '-' && src[i+1] === '-') ||
         (ch === '#' && src[i+1] !== '>')) {
+      // Determine if the comment was on its own source line (preceded by \n
+      // with only whitespace between) or inline after some code on the same
+      // line. We tag the placeholder so the renderer can keep an inline
+      // comment inline, and an own-line comment on its own line.
+      const lineStart = src.lastIndexOf('\n', i - 1) + 1;
+      const beforeOnLine = src.slice(lineStart, i);
+      const ownLine = /^\s*$/.test(beforeOnLine);
+
       let j = src.indexOf('\n', i);
       if (j === -1) j = src.length;
-      comments.push(src.slice(i, j));
+      const text = src.slice(i, j);
+      // Mark own-line comments by prefixing the stored text with a sentinel
+      // we'll detect in the renderer. Use a leading null marker we'll strip.
+      comments.push(ownLine ? '\x00OWN\x00' + text : text);
       out += '«CMT' + (comments.length - 1) + '»';
       i = j;
       continue;
@@ -2654,6 +2819,8 @@ function splitStatements(s) {
   if (buf.trim()) stmts.push({ text: buf, hasSemi: false });
   return stmts;
 }
+
+
 function detectDialect(sql) {
   if (/distribution\s*=\s*(hash|round_robin|replicate)/i.test(sql) ||
       /clustered\s+columnstore\s+index/i.test(sql) ||
