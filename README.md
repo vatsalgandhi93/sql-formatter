@@ -1,10 +1,21 @@
-# 🧱 SQL Dialect Formatter
+# 🧱 SQL One : Multi-Dialect Formatter
 
 A dependency-free SQL formatter that produces clean, executable output across 12 SQL dialects. Single HTML file. No install, no server, no internet.
 
-🔗 Link to the [SQL Dialect Formatter](https://vatsalgandhi93.github.io/sql-formatter/)
+🔗 **Try it live** → [SQL One Web Tester](https://vatsalgandhi93.github.io/sql-formatter/)
 
-**By EigenZ Solutions LLC** · **v1.19.0**
+**By EigenZ Solutions LLC**
+
+---
+
+## 📦 Get it as an editor extension
+
+The same formatter is available as a one-click install for every major SQL-using IDE:
+
+- 🟦 **VS Code** → [Install from VS Code Marketplace](https://marketplace.visualstudio.com/items?itemName=vatsalgandhi93.sql-dialect-formatter)
+- 🟪 **Cursor, Windsurf, VSCodium, Antigravity, Gitpod, Theia** → [Install from Open VSX](https://open-vsx.org/extension/vatsalgandhi93/sql-dialect-formatter)
+
+Once installed, right-click any SQL file → **SQL: Format Document** (or press `Shift+Alt+F`). Works with `.sql`, `.bqsql`, `.pgsql`, `.tsql`, `.mysql`, `.snowflake`, and many more.
 
 ---
 
@@ -47,19 +58,20 @@ Auto-detected, or pick manually.
 
 ☁️ **Cloud** — Azure Synapse · Amazon Redshift · AWS Athena · Databricks · BigQuery · Snowflake
 
-
 🗄️ **Traditional** — PostgreSQL · MySQL · SQL Server · Spark SQL · Generic SQL
 
 ---
 
 ## 🛠️ Features
 
-- 📐 **Clause-per-line** layout — SELECT, FROM, JOINs, WHERE, GROUP BY, HAVING, QUALIFY, ORDER BY, LIMIT
+- 📐 **Clause-per-line** layout — SELECT, FROM, JOINs, WHERE, GROUP BY, HAVING, QUALIFY, ORDER BY, LIMIT, OFFSET, FETCH NEXT
 - 🪜 **One column per line**, one condition per line, split by `AND` / `OR`
 - 🪟 **Window functions** — `OVER`, `PARTITION BY`, `ROWS BETWEEN`, `ROW_NUMBER`, `RANK`, `LAG`, `LEAD`
 - 🌲 **CTEs & subqueries** — bracket-aligned, multi-level nesting, depth-aware
 - 🌀 **CASE expressions** — nested, searched, inside function calls, with empty `ELSE`
-- 💬 **Three comment styles** — `--`, `#` (MySQL/BigQuery/Hive), and multi-line `/* … */`
+- 🧱 **Full DDL/DML/Procedural** — CREATE TABLE/VIEW/PROCEDURE/FUNCTION, INSERT/UPDATE/DELETE/MERGE, BEGIN/END blocks, IF/WHILE, transactions
+- 💬 **Three comment styles** — `--`, `#` (MySQL/BigQuery/Hive), and multi-line `/* … */` — inline trailing comments preserved with their code
+- ⚠️ **Dialect compatibility warnings** — surfaces features that won't run on the selected dialect (e.g. `QUALIFY` in PostgreSQL, `IFF` in MySQL)
 - 🔠 **~200 keywords uppercased** — UNNEST, SPLIT, REGEXP_*, ARRAY_*, DATE_*, JSON_*, and more
 - ✅ **Always executable** — no stray trailing commas before clause boundaries
 - 🎨 **Light & dark themes** — your choice persists
@@ -69,11 +81,23 @@ Auto-detected, or pick manually.
 
 ## 🚀 Use it
 
-Open `sql-formatter-tester.html` in any browser. That's it.
-
+**In your browser** — visit the [web tester](https://vatsalgandhi93.github.io/sql-formatter/) or open `sql-formatter-tester.html` locally:
 - Paste SQL on the left
 - Click **Format SQL**
 - Copy clean SQL from the right
+
+**In your editor** — install the extension from [VS Code Marketplace](https://marketplace.visualstudio.com/items?itemName=vatsalgandhi93.sql-dialect-formatter) or [Open VSX](https://open-vsx.org/extension/vatsalgandhi93/sql-dialect-formatter):
+- Right-click any SQL file → **SQL: Format Document**
+- Or press `Shift+Alt+F`
+- Or enable **Format on Save** in your editor settings
+
+---
+
+## 🔒 Privacy
+
+- Runs entirely client-side. Your queries never leave your browser or editor.
+- No telemetry, no signup, no cloud roundtrip.
+- The extension and web tester are functionally identical — same formatter, different delivery.
 
 ---
 
@@ -104,4 +128,4 @@ Zero external dependencies, so it works on any static host.
 
 ## 📜 License
 
-© 2026 EigenZ Solutions LLC. All rights reserved.
+© 2026 EigenZ Solutions LLC. All rights reserved. MIT license.
