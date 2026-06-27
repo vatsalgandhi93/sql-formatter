@@ -15,7 +15,7 @@ The same formatter is available as a one-click install for every major SQL-using
 - 🟦 **VS Code** → [Install from VS Code Marketplace](https://marketplace.visualstudio.com/items?itemName=vatsalgandhi93.sql-dialect-formatter)
 - 🟪 **Cursor, Windsurf, VSCodium, Antigravity, Gitpod, Theia** → [Install from Open VSX](https://open-vsx.org/extension/vatsalgandhi93/sql-dialect-formatter)
 
-Once installed, right-click any SQL file → **SQL: Format Document** (or press `Shift+Alt+F`). Works with `.sql`, `.bqsql`, `.pgsql`, `.tsql`, `.mysql`, `.snowflake`, and many more.
+Once installed, right-click any SQL file → **SQL: Format Document** (or press `Shift+Alt+F`). Works with `.sql`, `.bqsql`, `.pgsql`, `.tsql`, `.mysql`, `.snowflake`, and many more dialect-specific extensions, alongside whatever dialect-specific tooling you already have installed.
 
 ---
 
@@ -70,7 +70,7 @@ Auto-detected, or pick manually.
 - 🌲 **CTEs & subqueries** — bracket-aligned, multi-level nesting, depth-aware
 - 🌀 **CASE expressions** — nested, searched, inside function calls, with empty `ELSE`
 - 🧱 **Full DDL/DML/Procedural** — CREATE TABLE/VIEW/PROCEDURE/FUNCTION, INSERT/UPDATE/DELETE/MERGE, BEGIN/END blocks, IF/WHILE, transactions
-- 💬 **Three comment styles** — `--`, `#` (MySQL/BigQuery/Hive), and multi-line `/* … */` — inline trailing comments preserved with their code
+- 💬 **Three comment styles** — `--`, `#` (MySQL/BigQuery/Hive), and multi-line `/* … */` — inline trailing comments stay attached to their code
 - ⚠️ **Dialect compatibility warnings** — surfaces features that won't run on the selected dialect (e.g. `QUALIFY` in PostgreSQL, `IFF` in MySQL)
 - 🔠 **~200 keywords uppercased** — UNNEST, SPLIT, REGEXP_*, ARRAY_*, DATE_*, JSON_*, and more
 - ✅ **Always executable** — no stray trailing commas before clause boundaries
@@ -101,22 +101,9 @@ Auto-detected, or pick manually.
 
 ---
 
-## ⚡ Performance
+## 🌍 Self-host
 
-| Input size | Format time |
-|---|---|
-| 1 KB | 6 ms |
-| 10 KB | 43 ms |
-| 100 KB | 128 ms |
-| 500 KB | 352 ms |
-
-A 2,000-line query with 60 CTEs formats in **48 ms**. No hard character limit.
-
----
-
-## 🌍 Share it
-
-Want to host the tester online?
+Want to host the tester yourself?
 
 - 🐙 **GitHub Pages** — push to a repo, enable Pages
 - 🪂 **Netlify Drop** — drag the HTML to <https://app.netlify.com/drop>
@@ -128,4 +115,4 @@ Zero external dependencies, so it works on any static host.
 
 ## 📜 License
 
-© 2026 EigenZ Solutions LLC. All rights reserved. MIT license.
+MIT © 2026 EigenZ Solutions LLC
